@@ -32,8 +32,9 @@ public final class LivePreviewPipeline: PreviewPipeline {
     private let decoder = ImageIOThumbnailDecoder()
     private var running = 0
     private var failures = Set<URL>()
-    private var jobs: [UUID: PreviewJob] = [:]
     private var viewerPixels: [URL: Int] = [:]
+    private var fileDates: [UUID: Date] = [:]
+    private var queuedIDsByURL: [URL: Set<UUID>] = [:]
 
     public init() {}
 
@@ -42,8 +43,9 @@ public final class LivePreviewPipeline: PreviewPipeline {
         thumbnails.removeAll()
         viewers.removeAll()
         failures.removeAll()
-        jobs.removeAll()
         viewerPixels.removeAll()
+        fileDates.removeAll()
+        queuedIDsByURL.removeAll()
         generation += 1
     }
 
@@ -53,6 +55,11 @@ public final class LivePreviewPipeline: PreviewPipeline {
         viewers.remove(url: url)
         viewerPixels.removeValue(forKey: url)
         failures.remove(url)
+        if let ids = queuedIDsByURL.removeValue(forKey: url) {
+            for id in ids {
+                fileDates.removeValue(forKey: id)
+            }
+        }
     }
 
     public func requestThumbnail(file: ImageFile) {
@@ -60,8 +67,7 @@ public final class LivePreviewPipeline: PreviewPipeline {
         guard !failures.contains(file.url) else { return }
         if thumbnails.image(url: file.url, maxPixelSize: PreviewMaxPixel.thumbnail, modified: file.modificationDate) != nil { return }
         let id = scheduler.enqueue(url: file.url, maxPixelSize: PreviewMaxPixel.thumbnail, priority: .thumbnail)
-        jobs[id] = PreviewJob(id: id, url: file.url, maxPixelSize: PreviewMaxPixel.thumbnail, priority: .thumbnail)
-        remember(file, maxPixelSize: PreviewMaxPixel.thumbnail, id: id)
+        remember(file, id: id)
         pump()
     }
 
@@ -88,18 +94,27 @@ public final class LivePreviewPipeline: PreviewPipeline {
 
     public func didFail(url: URL) -> Bool { failures.contains(url) }
 
-    private var fileDates: [UUID: Date] = [:]
-
-    private func remember(_ file: ImageFile, maxPixelSize: Int, id: UUID) {
-        fileDates[id] = file.modificationDate
-        jobs[id] = PreviewJob(id: id, url: file.url, maxPixelSize: maxPixelSize, priority: jobs[id]?.priority ?? .thumbnail)
+    private func remember(_ file: ImageFile, id: UUID) {
+        trackQueued(id: id, url: file.url, modified: file.modificationDate)
     }
 
     private func enqueueViewer(_ file: ImageFile, maxPixelSize: Int, priority: PreviewPriority) {
         guard file.iCloudState != .notDownloaded else { return }
         let id = scheduler.enqueue(url: file.url, maxPixelSize: maxPixelSize, priority: priority)
-        jobs[id] = PreviewJob(id: id, url: file.url, maxPixelSize: maxPixelSize, priority: priority)
-        fileDates[id] = file.modificationDate
+        trackQueued(id: id, url: file.url, modified: file.modificationDate)
+    }
+
+    private func trackQueued(id: UUID, url: URL, modified: Date) {
+        fileDates[id] = modified
+        queuedIDsByURL[url, default: []].insert(id)
+    }
+
+    private func untrackQueued(id: UUID, url: URL) {
+        fileDates.removeValue(forKey: id)
+        queuedIDsByURL[url]?.remove(id)
+        if queuedIDsByURL[url]?.isEmpty == true {
+            queuedIDsByURL.removeValue(forKey: url)
+        }
     }
 
     private func resolvedPixelSize(file: ImageFile, requested: Int) -> Int {
@@ -112,6 +127,7 @@ public final class LivePreviewPipeline: PreviewPipeline {
         while let job = scheduler.startNext(runningCount: running) {
             running += 1
             let modified = fileDates[job.id] ?? .distantPast
+            untrackQueued(id: job.id, url: job.url)
             let priority = job.priority
             Task.detached { [decoder] in
                 let image = decoder.thumbnail(url: job.url, maxPixelSize: job.maxPixelSize)
