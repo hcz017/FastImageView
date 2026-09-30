@@ -30,3 +30,5 @@ public struct FolderScanner: Sendable {
         return files
     }
 }
+
+extension FolderScanner: FolderScanning {}
