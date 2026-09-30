@@ -23,6 +23,31 @@ public struct ImageIOThumbnailDecoder: Sendable {
     }
 }
 
+/// Pure write/drop decision for completed decode jobs (epoch + wanted viewer URLs).
+public struct PreviewDecodeWriteDecision: Equatable, Sendable {
+    public var shouldWrite: Bool
+
+    public init(shouldWrite: Bool) {
+        self.shouldWrite = shouldWrite
+    }
+
+    public static func decide(
+        jobEpoch: Int,
+        currentEpoch: Int,
+        priority: PreviewPriority,
+        url: URL,
+        wantedViewerURLs: Set<URL>
+    ) -> PreviewDecodeWriteDecision {
+        guard jobEpoch == currentEpoch else {
+            return PreviewDecodeWriteDecision(shouldWrite: false)
+        }
+        if priority == .thumbnail {
+            return PreviewDecodeWriteDecision(shouldWrite: true)
+        }
+        return PreviewDecodeWriteDecision(shouldWrite: wantedViewerURLs.contains(url))
+    }
+}
+
 @MainActor
 public final class LivePreviewPipeline: PreviewPipeline {
     public private(set) var generation = 0
@@ -31,10 +56,12 @@ public final class LivePreviewPipeline: PreviewPipeline {
     private let viewers = ImageByteCache(byteLimit: CacheBudget.viewerBytes)
     private let decoder = ImageIOThumbnailDecoder()
     private var running = 0
+    private var decodeEpoch = 0
     private var failures = Set<URL>()
     private var viewerPixels: [URL: Int] = [:]
     private var fileDates: [UUID: Date] = [:]
     private var queuedIDsByURL: [URL: Set<UUID>] = [:]
+    private var wantedViewerURLs = Set<URL>()
 
     public init() {}
 
@@ -46,6 +73,8 @@ public final class LivePreviewPipeline: PreviewPipeline {
         viewerPixels.removeAll()
         fileDates.removeAll()
         queuedIDsByURL.removeAll()
+        wantedViewerURLs.removeAll()
+        decodeEpoch += 1
         generation += 1
     }
 
@@ -72,7 +101,19 @@ public final class LivePreviewPipeline: PreviewPipeline {
     }
 
     public func showViewer(current: ImageFile, previous: ImageFile?, next: ImageFile?, maxPixelSize: Int) {
-        scheduler.yieldQueuedThumbnails()
+        for job in scheduler.yieldQueuedThumbnails() {
+            untrackQueued(id: job.id, url: job.url)
+        }
+
+        var wanted: Set<URL> = [current.url]
+        if let previous { wanted.insert(previous.url) }
+        if let next { wanted.insert(next.url) }
+
+        for job in scheduler.dropQueuedViewerJobs(keeping: wanted) {
+            untrackQueued(id: job.id, url: job.url)
+        }
+        wantedViewerURLs = wanted
+
         enqueueViewer(current, maxPixelSize: resolvedPixelSize(file: current, requested: maxPixelSize), priority: .current)
         if let previous {
             enqueueViewer(previous, maxPixelSize: resolvedPixelSize(file: previous, requested: maxPixelSize), priority: .prefetch)
@@ -129,18 +170,28 @@ public final class LivePreviewPipeline: PreviewPipeline {
             let modified = fileDates[job.id] ?? .distantPast
             untrackQueued(id: job.id, url: job.url)
             let priority = job.priority
+            let epoch = decodeEpoch
             Task.detached { [decoder] in
                 let image = decoder.thumbnail(url: job.url, maxPixelSize: job.maxPixelSize)
                 await MainActor.run {
                     self.running -= 1
-                    if let image {
-                        let cache = priority == .thumbnail ? self.thumbnails : self.viewers
-                        cache.insert(url: job.url, maxPixelSize: job.maxPixelSize, modified: modified, image: image)
-                        if priority != .thumbnail { self.viewerPixels[job.url] = job.maxPixelSize }
-                    } else {
-                        self.failures.insert(job.url)
+                    let decision = PreviewDecodeWriteDecision.decide(
+                        jobEpoch: epoch,
+                        currentEpoch: self.decodeEpoch,
+                        priority: priority,
+                        url: job.url,
+                        wantedViewerURLs: self.wantedViewerURLs
+                    )
+                    if decision.shouldWrite {
+                        if let image {
+                            let cache = priority == .thumbnail ? self.thumbnails : self.viewers
+                            cache.insert(url: job.url, maxPixelSize: job.maxPixelSize, modified: modified, image: image)
+                            if priority != .thumbnail { self.viewerPixels[job.url] = job.maxPixelSize }
+                        } else {
+                            self.failures.insert(job.url)
+                        }
+                        self.generation += 1
                     }
-                    self.generation += 1
                     self.pump()
                 }
             }

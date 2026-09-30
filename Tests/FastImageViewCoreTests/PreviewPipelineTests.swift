@@ -19,4 +19,65 @@ final class PreviewPipelineTests: XCTestCase {
         let image = try XCTUnwrap(ImageIOThumbnailDecoder().thumbnail(url: URL(fileURLWithPath: path), maxPixelSize: 16384))
         XCTAssertLessThanOrEqual(max(image.width, image.height), 16384)
     }
+
+    func testStaleEpochDropsThumbnail() {
+        let url = URL(fileURLWithPath: "/tmp/thumb.jpg")
+        let decision = PreviewDecodeWriteDecision.decide(
+            jobEpoch: 1,
+            currentEpoch: 2,
+            priority: .thumbnail,
+            url: url,
+            wantedViewerURLs: []
+        )
+        XCTAssertFalse(decision.shouldWrite)
+    }
+
+    func testStaleEpochDropsViewerImage() {
+        let url = URL(fileURLWithPath: "/tmp/viewer.jpg")
+        let decision = PreviewDecodeWriteDecision.decide(
+            jobEpoch: 0,
+            currentEpoch: 1,
+            priority: .current,
+            url: url,
+            wantedViewerURLs: [url]
+        )
+        XCTAssertFalse(decision.shouldWrite)
+    }
+
+    func testCurrentEpochAllowsThumbnail() {
+        let url = URL(fileURLWithPath: "/tmp/thumb.jpg")
+        let decision = PreviewDecodeWriteDecision.decide(
+            jobEpoch: 3,
+            currentEpoch: 3,
+            priority: .thumbnail,
+            url: url,
+            wantedViewerURLs: []
+        )
+        XCTAssertTrue(decision.shouldWrite)
+    }
+
+    func testCurrentEpochDropsViewerURLNotInWantedSet() {
+        let url = URL(fileURLWithPath: "/tmp/old.jpg")
+        let wanted = Set([URL(fileURLWithPath: "/tmp/current.jpg")])
+        let decision = PreviewDecodeWriteDecision.decide(
+            jobEpoch: 5,
+            currentEpoch: 5,
+            priority: .prefetch,
+            url: url,
+            wantedViewerURLs: wanted
+        )
+        XCTAssertFalse(decision.shouldWrite)
+    }
+
+    func testCurrentEpochAllowsViewerURLThatIsWanted() {
+        let url = URL(fileURLWithPath: "/tmp/current.jpg")
+        let decision = PreviewDecodeWriteDecision.decide(
+            jobEpoch: 5,
+            currentEpoch: 5,
+            priority: .current,
+            url: url,
+            wantedViewerURLs: [url]
+        )
+        XCTAssertTrue(decision.shouldWrite)
+    }
 }

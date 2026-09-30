@@ -26,8 +26,18 @@ public struct PreviewScheduler: Equatable, Sendable {
         return job.id
     }
 
-    public mutating func yieldQueuedThumbnails() {
+    @discardableResult
+    public mutating func yieldQueuedThumbnails() -> [PreviewJob] {
+        let removed = queue.filter { $0.priority == .thumbnail }
         queue.removeAll { $0.priority == .thumbnail }
+        return removed
+    }
+
+    @discardableResult
+    public mutating func dropQueuedViewerJobs(keeping urls: Set<URL>) -> [PreviewJob] {
+        let removed = queue.filter { $0.priority != .thumbnail && !urls.contains($0.url) }
+        queue.removeAll { $0.priority != .thumbnail && !urls.contains($0.url) }
+        return removed
     }
 
     public mutating func cancel(url: URL) {

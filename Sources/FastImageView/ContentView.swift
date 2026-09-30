@@ -24,6 +24,9 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 720, minHeight: 480)
+        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
+            model.syncPreviewGeneration()
+        }
         .background {
             EventMonitor(
                 keywordFocused: $keywordFocused,
@@ -69,6 +72,7 @@ struct ContentView: View {
                 Button(format.rawValue) { model.toggleFormat(format) }
                     .buttonStyle(.bordered)
                     .tint(on ? .accentColor : nil)
+                    .focusable(false)
             }
             Spacer()
         }
@@ -92,9 +96,6 @@ struct ContentView: View {
                 }
                 .padding(8)
             }
-        }
-        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
-            model.syncPreviewGeneration()
         }
     }
 
@@ -123,7 +124,8 @@ struct ContentView: View {
     }
 
     private func viewer(_ file: ImageFile) -> some View {
-        VStack {
+        let _ = model.renderGeneration
+        return VStack {
             Text(file.filename)
             Group {
                 if file.iCloudState == .notDownloaded {
@@ -273,6 +275,9 @@ private struct EventMonitor: NSViewRepresentable {
 
         func handleScrollWheel(_ event: NSEvent) -> NSEvent? {
             guard let model, let scroll, model.mode == .viewer else { return event }
+            if model.fit == .actual && event.hasPreciseScrollingDeltas {
+                return event
+            }
             let raw = specDeltas(
                 scrollingDeltaX: event.scrollingDeltaX,
                 scrollingDeltaY: event.scrollingDeltaY

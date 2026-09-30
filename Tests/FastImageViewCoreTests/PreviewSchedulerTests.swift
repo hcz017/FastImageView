@@ -29,4 +29,54 @@ final class PreviewSchedulerTests: XCTestCase {
         _ = scheduler.enqueue(url: prefetch, maxPixelSize: 1800, priority: .prefetch)
         XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, prefetch)
     }
+
+    func testDropQueuedViewerJobsKeepsWantedAndThumbnails() {
+        var scheduler = PreviewScheduler()
+        let folder = URL(fileURLWithPath: "/tmp")
+        let current = folder.appendingPathComponent("current.jpg")
+        let previous = folder.appendingPathComponent("prev.jpg")
+        let next = folder.appendingPathComponent("next.jpg")
+        let stale = folder.appendingPathComponent("stale.jpg")
+        let thumb = folder.appendingPathComponent("thumb.jpg")
+
+        _ = scheduler.enqueue(url: stale, maxPixelSize: 1800, priority: .current)
+        _ = scheduler.enqueue(url: folder.appendingPathComponent("old-prefetch.jpg"), maxPixelSize: 1800, priority: .prefetch)
+        _ = scheduler.enqueue(url: current, maxPixelSize: 1800, priority: .current)
+        _ = scheduler.enqueue(url: previous, maxPixelSize: 1800, priority: .prefetch)
+        _ = scheduler.enqueue(url: next, maxPixelSize: 1800, priority: .prefetch)
+        _ = scheduler.enqueue(url: thumb, maxPixelSize: 400, priority: .thumbnail)
+
+        let wanted: Set<URL> = [current, previous, next]
+        let removed = scheduler.dropQueuedViewerJobs(keeping: wanted)
+
+        XCTAssertEqual(Set(removed.map(\.url)), Set([
+            stale,
+            folder.appendingPathComponent("old-prefetch.jpg"),
+        ]))
+        XCTAssertTrue(removed.allSatisfy { $0.priority != .thumbnail })
+
+        var remaining: [PreviewJob] = []
+        while let job = scheduler.startNext(runningCount: remaining.count) {
+            remaining.append(job)
+        }
+        XCTAssertEqual(Set(remaining.map(\.url)), Set([current, previous, next, thumb]))
+        XCTAssertTrue(remaining.contains { $0.url == thumb && $0.priority == .thumbnail })
+    }
+
+    func testYieldQueuedThumbnailsReturnsRemovedJobs() {
+        var scheduler = PreviewScheduler()
+        let folder = URL(fileURLWithPath: "/tmp")
+        let a = folder.appendingPathComponent("a.jpg")
+        let b = folder.appendingPathComponent("b.jpg")
+        let viewer = folder.appendingPathComponent("v.jpg")
+        _ = scheduler.enqueue(url: a, maxPixelSize: 400, priority: .thumbnail)
+        _ = scheduler.enqueue(url: b, maxPixelSize: 400, priority: .thumbnail)
+        _ = scheduler.enqueue(url: viewer, maxPixelSize: 1800, priority: .current)
+
+        let removed = scheduler.yieldQueuedThumbnails()
+        XCTAssertEqual(Set(removed.map(\.url)), Set([a, b]))
+        XCTAssertTrue(removed.allSatisfy { $0.priority == .thumbnail })
+        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, viewer)
+        XCTAssertNil(scheduler.startNext(runningCount: 0))
+    }
 }
