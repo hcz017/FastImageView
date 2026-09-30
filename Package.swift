@@ -7,6 +7,10 @@ let package = Package(
     targets: [
         .target(name: "FastImageViewCore"),
         .executableTarget(name: "FastImageView", dependencies: ["FastImageViewCore"]),
-        .testTarget(name: "FastImageViewCoreTests", dependencies: ["FastImageViewCore"])
+        .testTarget(
+            name: "FastImageViewCoreTests",
+            dependencies: ["FastImageViewCore"],
+            resources: [.copy("Fixtures")]
+        )
     ]
 )
