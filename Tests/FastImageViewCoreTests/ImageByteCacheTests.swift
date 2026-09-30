@@ -21,6 +21,22 @@ final class ImageByteCacheTests: XCTestCase {
         XCTAssertNil(cache.image(url: url, maxPixelSize: 400, modified: date))
     }
 
+    func testSameKeyReplacementKeepsIndexForRemove() {
+        let cache = ImageByteCache(byteLimit: CacheBudget.thumbnailBytes)
+        let url = URL(fileURLWithPath: "/tmp/replace.jpg")
+        let date = Date(timeIntervalSince1970: 30)
+        let maxPixelSize = 400
+        guard let image1 = makeTestImage(width: 2, height: 2),
+              let image2 = makeTestImage(width: 3, height: 3) else {
+            XCTFail("无法创建测试图")
+            return
+        }
+        cache.insert(url: url, maxPixelSize: maxPixelSize, modified: date, image: image1)
+        cache.insert(url: url, maxPixelSize: maxPixelSize, modified: date, image: image2)
+        cache.remove(url: url)
+        XCTAssertNil(cache.image(url: url, maxPixelSize: maxPixelSize, modified: date))
+    }
+
     func testEvictionKeepsIndexAlignedWithCache() {
         let oneImageCost = CacheBudget.cost(width: 2, height: 2)
         let cache = ImageByteCache(byteLimit: oneImageCost)

@@ -37,8 +37,10 @@ public final class ImageByteCache: NSObject, NSCacheDelegate, @unchecked Sendabl
         let cost = CacheBudget.cost(width: image.width, height: image.height)
         let box = CacheBox(image: image, key: key, url: url)
         lock.lock()
-        keysByURL[url, default: []].insert(key)
         cache.setObject(box, forKey: key as NSString, cost: cost)
+        if cache.object(forKey: key as NSString) === box {
+            keysByURL[url, default: []].insert(key)
+        }
         lock.unlock()
     }
 
