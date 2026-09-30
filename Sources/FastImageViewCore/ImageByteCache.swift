@@ -9,25 +9,36 @@ public enum CacheBudget {
 
 final class CacheBox: NSObject {
     let image: CGImage
-    init(image: CGImage) { self.image = image }
+    let key: String
+    let url: URL
+
+    init(image: CGImage, key: String, url: URL) {
+        self.image = image
+        self.key = key
+        self.url = url
+    }
 }
 
-public final class ImageByteCache: @unchecked Sendable {
+public final class ImageByteCache: NSObject, NSCacheDelegate, @unchecked Sendable {
     public let byteLimit: Int
     private let cache = NSCache<NSString, CacheBox>()
     private var keysByURL: [URL: Set<String>] = [:]
-    private let lock = NSLock()
+    private let lock = NSRecursiveLock()
 
     public init(byteLimit: Int) {
         self.byteLimit = byteLimit
+        super.init()
         cache.totalCostLimit = byteLimit
+        cache.delegate = self
     }
 
     public func insert(url: URL, maxPixelSize: Int, modified: Date, image: CGImage) {
         let key = Self.key(url: url, maxPixelSize: maxPixelSize, modified: modified)
-        cache.setObject(CacheBox(image: image), forKey: key as NSString, cost: CacheBudget.cost(width: image.width, height: image.height))
+        let cost = CacheBudget.cost(width: image.width, height: image.height)
+        let box = CacheBox(image: image, key: key, url: url)
         lock.lock()
         keysByURL[url, default: []].insert(key)
+        cache.setObject(box, forKey: key as NSString, cost: cost)
         lock.unlock()
     }
 
@@ -39,15 +50,27 @@ public final class ImageByteCache: @unchecked Sendable {
     public func remove(url: URL) {
         lock.lock()
         let keys = keysByURL.removeValue(forKey: url) ?? []
+        for key in keys {
+            cache.removeObject(forKey: key as NSString)
+        }
         lock.unlock()
-        for key in keys { cache.removeObject(forKey: key as NSString) }
     }
 
     public func removeAll() {
         lock.lock()
         keysByURL.removeAll()
-        lock.unlock()
         cache.removeAllObjects()
+        lock.unlock()
+    }
+
+    public func cache(_ cache: NSCache<AnyObject, AnyObject>, willEvictObject obj: Any) {
+        guard let box = obj as? CacheBox else { return }
+        lock.lock()
+        keysByURL[box.url]?.remove(box.key)
+        if keysByURL[box.url]?.isEmpty == true {
+            keysByURL.removeValue(forKey: box.url)
+        }
+        lock.unlock()
     }
 
     private static func key(url: URL, maxPixelSize: Int, modified: Date) -> String {
