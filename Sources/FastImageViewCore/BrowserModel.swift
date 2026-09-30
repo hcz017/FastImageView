@@ -47,6 +47,14 @@ public final class BrowserModel {
         self.previews = previews
     }
 
+    public static func live() -> BrowserModel {
+        BrowserModel(
+            scanner: FolderScanner(),
+            deletion: DeletionService(storage: FileManagerTrashStorage()),
+            previews: LivePreviewPipeline()
+        )
+    }
+
     public func beginOpen() -> Int {
         generation += 1
         return generation
