@@ -98,10 +98,13 @@ struct ContentView: View {
         }
         .padding(4)
         .background(selected ? Color.accentColor.opacity(0.25) : Color.clear)
-        .onTapGesture { select(file) }
-        .onTapGesture(count: 2) {
-            select(file)
-            model.openViewer(screenLongEdge: screenLongEdge())
+        .overlay {
+            ClickCountCatcher { clickCount in
+                select(file)
+                if clickCount >= 2 {
+                    model.openViewer(screenLongEdge: screenLongEdge())
+                }
+            }
         }
         .onAppear { model.thumbnailRequest(file) }
     }
@@ -138,4 +141,29 @@ func screenLongEdge() -> Int {
     let width = Int((screen?.frame.width ?? 1440) * scale)
     let height = Int((screen?.frame.height ?? 900) * scale)
     return max(width, height)
+}
+
+/// Captures AppKit `mouseDown` so `NSEvent.clickCount` distinguishes single vs double click immediately.
+private struct ClickCountCatcher: NSViewRepresentable {
+    var onClick: (Int) -> Void
+
+    func makeNSView(context: Context) -> ClickCountView {
+        let view = ClickCountView()
+        view.onClick = onClick
+        return view
+    }
+
+    func updateNSView(_ nsView: ClickCountView, context: Context) {
+        nsView.onClick = onClick
+    }
+}
+
+private final class ClickCountView: NSView {
+    var onClick: ((Int) -> Void)?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { self }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?(event.clickCount)
+    }
 }
