@@ -86,7 +86,7 @@ struct ContentView: View {
                     HStack(spacing: theme.spacingSM) {
                         Image(systemName: "folder")
                             .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: theme.spacingXS) {
                             Text(url.lastPathComponent)
                                 .lineLimit(1)
                             Text(url.path)
@@ -121,7 +121,7 @@ struct ContentView: View {
     private var header: some View {
         HStack(spacing: theme.spacingSM) {
             Button("打开文件夹…") { chooseFolder(model) }
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: theme.spacingXS) {
                 Text(model.folderURL?.lastPathComponent ?? "")
                     .font(.headline)
                     .lineLimit(1)
@@ -342,7 +342,7 @@ struct ContentView: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, theme.spacingXS)
-            .padding(.vertical, 2)
+            .padding(.vertical, theme.spacingXS)
             .background(
                 theme.badgeBackground(isRaw: format.isRaw),
                 in: RoundedRectangle(cornerRadius: theme.radiusBadge)
