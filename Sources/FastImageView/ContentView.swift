@@ -120,9 +120,9 @@ struct ContentView: View {
         .background(selected ? Color.accentColor.opacity(0.25) : Color.clear)
         .overlay {
             ClickCountCatcher { clickCount in
+                keywordFocused = false
                 select(file)
                 if clickCount >= 2 {
-                    keywordFocused = false
                     model.openViewer(screenLongEdge: screenLongEdge())
                 }
             }
