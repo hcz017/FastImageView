@@ -15,7 +15,6 @@ struct ContentView: View {
             case .noFolder:
                 empty
             case .grid, .viewer:
-                header
                 if model.mode == .grid {
                     filterBar
                     Divider()
@@ -116,32 +115,6 @@ struct ContentView: View {
         .background(.background, in: RoundedRectangle(cornerRadius: theme.radiusLarge))
     }
 
-    // MARK: - 头部
-
-    private var header: some View {
-        HStack(spacing: theme.spacingSM) {
-            Button("打开文件夹…") { chooseFolder(model) }
-            VStack(alignment: .leading, spacing: theme.spacingXS) {
-                Text(model.folderURL?.lastPathComponent ?? "")
-                    .font(.headline)
-                    .lineLimit(1)
-                if model.catalog.keyword.isEmpty && model.catalog.selectedFormats.isEmpty {
-                    Text("\(model.catalog.files.count) 张图片")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("筛选出 \(model.catalog.filtered.count) / \(model.catalog.files.count) 张")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-        }
-        .padding(.horizontal, theme.spacingLG)
-        .padding(.vertical, theme.spacingSM)
-        .background(.bar)
-    }
-
     // MARK: - 筛选栏
 
     private var filterBar: some View {
@@ -162,11 +135,34 @@ struct ContentView: View {
                     .toggleStyle(.button)
                     .controlSize(.small)
             }
-            Spacer()
+            Spacer(minLength: theme.spacingMD)
+            folderInfo
         }
         .padding(.horizontal, theme.spacingLG)
         .padding(.vertical, theme.spacingSM)
         .background(.bar)
+    }
+
+    private var folderInfo: some View {
+        HStack(spacing: theme.spacingXS) {
+            Image(systemName: "folder")
+                .foregroundStyle(.secondary)
+            Text(model.folderURL?.lastPathComponent ?? "")
+                .font(.headline)
+                .lineLimit(1)
+            Text(folderCountText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .layoutPriority(1)
+    }
+
+    private var folderCountText: String {
+        let total = model.catalog.files.count
+        if model.catalog.keyword.isEmpty && model.catalog.selectedFormats.isEmpty {
+            return "\(total) 张"
+        }
+        return "\(model.catalog.filtered.count) / \(total) 张"
     }
 
     private func formatToggle(_ format: ImageFormat) -> Binding<Bool> {
@@ -262,6 +258,14 @@ struct ContentView: View {
         }
         .overlay(alignment: .top) {
             HStack(spacing: theme.spacingSM) {
+                Button {
+                    model.closeViewer()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("返回网格 (Esc)")
                 Text(file.filename)
                     .font(.headline)
                     .lineLimit(1)
