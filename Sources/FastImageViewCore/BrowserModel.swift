@@ -37,22 +37,37 @@ public final class BrowserModel {
     public private(set) var screenLongEdge = 1800
     public private(set) var renderGeneration = 0
     public private(set) var generation = 0
+    public private(set) var recentFolders: [URL]
+    private var recentList: RecentFolderList
+    private let recentDefaults: UserDefaults?
     private var undoStack: [UndoEntry] = []
     private let scanner: any FolderScanning
     private let deletion: DeletionService
     private let previews: any PreviewPipeline
 
-    public init(scanner: any FolderScanning, deletion: DeletionService, previews: any PreviewPipeline) {
+    public init(
+        scanner: any FolderScanning,
+        deletion: DeletionService,
+        previews: any PreviewPipeline,
+        recentFolders: RecentFolderList = RecentFolderList(),
+        recentDefaults: UserDefaults? = nil
+    ) {
         self.scanner = scanner
         self.deletion = deletion
         self.previews = previews
+        self.recentList = recentFolders
+        self.recentFolders = recentFolders.urls
+        self.recentDefaults = recentDefaults
     }
 
     public static func live() -> BrowserModel {
-        BrowserModel(
+        let defaults = UserDefaults.standard
+        return BrowserModel(
             scanner: FolderScanner(),
             deletion: DeletionService(storage: FileManagerTrashStorage()),
-            previews: LivePreviewPipeline()
+            previews: LivePreviewPipeline(),
+            recentFolders: RecentFolderList(defaults: defaults),
+            recentDefaults: defaults
         )
     }
 
@@ -85,6 +100,13 @@ public final class BrowserModel {
             undoStack.removeAll()
             catalog.replaceFiles(files)
             folderURL = pendingFolderURL
+            if let folder = pendingFolderURL {
+                recentList.remember(folder)
+                recentFolders = recentList.urls
+                if let recentDefaults {
+                    recentList.save(to: recentDefaults)
+                }
+            }
             mode = .grid
             fit = .fit
             openError = nil

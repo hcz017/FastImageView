@@ -46,9 +46,36 @@ struct ContentView: View {
     }
 
     private var empty: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             Button("打开文件夹") { chooseFolder(model) }
             if let openError = model.openError { Text(openError) }
+            if !model.recentFolders.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("最近打开")
+                        .font(.headline)
+                        .padding(.bottom, 4)
+                    ForEach(model.recentFolders, id: \.path) { url in
+                        Button {
+                            model.open(folder: url)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(url.lastPathComponent)
+                                Text(url.path)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: 480)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
