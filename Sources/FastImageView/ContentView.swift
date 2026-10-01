@@ -85,18 +85,29 @@ struct ContentView: View {
 
     private var grid: some View {
         let columns = [GridItem(.adaptive(minimum: 160), spacing: 8)]
-        return ScrollView {
-            if model.catalog.filtered.isEmpty {
-                Text("没有匹配的图片").frame(maxWidth: .infinity, minHeight: 240)
-            } else {
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(model.catalog.filtered) { file in
-                        cell(file)
+        return ScrollViewReader { proxy in
+            ScrollView {
+                if model.catalog.filtered.isEmpty {
+                    Text("没有匹配的图片").frame(maxWidth: .infinity, minHeight: 240)
+                } else {
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(model.catalog.filtered) { file in
+                            cell(file).id(file.url)
+                        }
                     }
+                    .padding(8)
                 }
-                .padding(8)
+            }
+            .onAppear { revealSelection(using: proxy) }
+            .onChange(of: model.catalog.selectionID) { _, _ in
+                revealSelection(using: proxy)
             }
         }
+    }
+
+    private func revealSelection(using proxy: ScrollViewProxy) {
+        guard model.mode == .grid, let id = model.catalog.selectionID else { return }
+        proxy.scrollTo(id)
     }
 
     private func cell(_ file: ImageFile) -> some View {
