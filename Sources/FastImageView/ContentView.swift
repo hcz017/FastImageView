@@ -128,6 +128,7 @@ struct ContentView: View {
             }
         }
         .onAppear { model.thumbnailRequest(file) }
+        .onDisappear { model.thumbnailRelease(file) }
     }
 
     private func select(_ file: ImageFile) {

@@ -62,6 +62,7 @@ public final class LivePreviewPipeline: PreviewPipeline {
     private var fileDates: [UUID: Date] = [:]
     private var queuedIDsByURL: [URL: Set<UUID>] = [:]
     private var wantedViewerURLs = Set<URL>()
+    private var decodingThumbnails = Set<URL>()
 
     public init() {}
 
@@ -95,9 +96,20 @@ public final class LivePreviewPipeline: PreviewPipeline {
         guard file.iCloudState != .notDownloaded else { return }
         guard !failures.contains(file.url) else { return }
         if thumbnails.image(url: file.url, maxPixelSize: PreviewMaxPixel.thumbnail, modified: file.modificationDate) != nil { return }
-        let id = scheduler.enqueue(url: file.url, maxPixelSize: PreviewMaxPixel.thumbnail, priority: .thumbnail)
+        if decodingThumbnails.contains(file.url) { return }
+        if queuedIDsByURL[file.url] != nil {
+            _ = scheduler.enqueueThumbnailFirst(url: file.url, maxPixelSize: PreviewMaxPixel.thumbnail)
+            return
+        }
+        let id = scheduler.enqueueThumbnailFirst(url: file.url, maxPixelSize: PreviewMaxPixel.thumbnail)
         remember(file, id: id)
         pump()
+    }
+
+    public func cancelQueuedThumbnail(url: URL) {
+        for job in scheduler.cancelQueuedThumbnails(url: url) {
+            untrackQueued(id: job.id, url: job.url)
+        }
     }
 
     public func showViewer(current: ImageFile, previous: ImageFile?, next: ImageFile?, maxPixelSize: Int) {
@@ -171,10 +183,12 @@ public final class LivePreviewPipeline: PreviewPipeline {
             untrackQueued(id: job.id, url: job.url)
             let priority = job.priority
             let epoch = decodeEpoch
+            if priority == .thumbnail { decodingThumbnails.insert(job.url) }
             Task.detached { [decoder] in
                 let image = decoder.thumbnail(url: job.url, maxPixelSize: job.maxPixelSize)
                 await MainActor.run {
                     self.running -= 1
+                    if priority == .thumbnail { self.decodingThumbnails.remove(job.url) }
                     let decision = PreviewDecodeWriteDecision.decide(
                         jobEpoch: epoch,
                         currentEpoch: self.decodeEpoch,

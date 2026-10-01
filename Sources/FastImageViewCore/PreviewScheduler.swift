@@ -26,6 +26,26 @@ public struct PreviewScheduler: Equatable, Sendable {
         return job.id
     }
 
+    /// Puts this thumbnail ahead of other queued thumbnails. A second request for the same URL moves the existing job forward.
+    @discardableResult
+    public mutating func enqueueThumbnailFirst(url: URL, maxPixelSize: Int) -> UUID {
+        if let index = queue.firstIndex(where: { $0.url == url && $0.priority == .thumbnail }) {
+            let job = queue.remove(at: index)
+            queue.insert(job, at: 0)
+            return job.id
+        }
+        let job = PreviewJob(id: UUID(), url: url, maxPixelSize: maxPixelSize, priority: .thumbnail)
+        queue.insert(job, at: 0)
+        return job.id
+    }
+
+    @discardableResult
+    public mutating func cancelQueuedThumbnails(url: URL) -> [PreviewJob] {
+        let removed = queue.filter { $0.url == url && $0.priority == .thumbnail }
+        queue.removeAll { $0.url == url && $0.priority == .thumbnail }
+        return removed
+    }
+
     @discardableResult
     public mutating func yieldQueuedThumbnails() -> [PreviewJob] {
         let removed = queue.filter { $0.priority == .thumbnail }

@@ -17,6 +17,7 @@ private final class RecordingPipeline: PreviewPipeline {
     func reset() { resetCount += 1 }
     func cancel(url: URL) { cancelled.append(url) }
     func requestThumbnail(file: ImageFile) { thumbnailRequests.append(file.url) }
+    func cancelQueuedThumbnail(url: URL) {}
     var failedURLs: Set<URL> = []
     func showViewer(current: ImageFile, previous: ImageFile?, next: ImageFile?, maxPixelSize: Int) {
         viewerCurrents.append(current.url)

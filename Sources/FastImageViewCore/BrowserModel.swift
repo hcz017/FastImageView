@@ -17,6 +17,7 @@ public protocol PreviewPipeline: AnyObject {
     func reset()
     func cancel(url: URL)
     func requestThumbnail(file: ImageFile)
+    func cancelQueuedThumbnail(url: URL)
     func showViewer(current: ImageFile, previous: ImageFile?, next: ImageFile?, maxPixelSize: Int)
     func cachedThumbnail(file: ImageFile) -> CGImage?
     func cachedViewerImage(file: ImageFile) -> CGImage?
@@ -182,6 +183,10 @@ public final class BrowserModel {
     public func thumbnailRequest(_ file: ImageFile) {
         guard file.iCloudState != .notDownloaded else { return }
         previews.requestThumbnail(file: file)
+    }
+
+    public func thumbnailRelease(_ file: ImageFile) {
+        previews.cancelQueuedThumbnail(url: file.url)
     }
 
     public func noteUnavailable(_ url: URL) {

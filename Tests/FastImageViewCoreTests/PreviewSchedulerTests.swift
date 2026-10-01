@@ -63,6 +63,39 @@ final class PreviewSchedulerTests: XCTestCase {
         XCTAssertTrue(remaining.contains { $0.url == thumb && $0.priority == .thumbnail })
     }
 
+    func testNewestThumbnailRunsBeforeOlderOnes() {
+        var scheduler = PreviewScheduler()
+        let folder = URL(fileURLWithPath: "/tmp")
+        let older = folder.appendingPathComponent("older.jpg")
+        let newer = folder.appendingPathComponent("newer.jpg")
+        _ = scheduler.enqueueThumbnailFirst(url: older, maxPixelSize: 400)
+        _ = scheduler.enqueueThumbnailFirst(url: newer, maxPixelSize: 400)
+        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, newer)
+        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, older)
+    }
+
+    func testRepeatedThumbnailRequestMovesItAhead() {
+        var scheduler = PreviewScheduler()
+        let folder = URL(fileURLWithPath: "/tmp")
+        let first = folder.appendingPathComponent("first.jpg")
+        let second = folder.appendingPathComponent("second.jpg")
+        _ = scheduler.enqueueThumbnailFirst(url: first, maxPixelSize: 400)
+        _ = scheduler.enqueueThumbnailFirst(url: second, maxPixelSize: 400)
+        _ = scheduler.enqueueThumbnailFirst(url: first, maxPixelSize: 400)
+        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, first)
+    }
+
+    func testCancelQueuedThumbnailLeavesViewerJob() {
+        var scheduler = PreviewScheduler()
+        let folder = URL(fileURLWithPath: "/tmp")
+        let photo = folder.appendingPathComponent("photo.jpg")
+        _ = scheduler.enqueueThumbnailFirst(url: photo, maxPixelSize: 400)
+        _ = scheduler.enqueue(url: photo, maxPixelSize: 1800, priority: .current)
+        let removed = scheduler.cancelQueuedThumbnails(url: photo)
+        XCTAssertEqual(removed.map(\.priority), [.thumbnail])
+        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.priority, .current)
+    }
+
     func testYieldQueuedThumbnailsReturnsRemovedJobs() {
         var scheduler = PreviewScheduler()
         let folder = URL(fileURLWithPath: "/tmp")
