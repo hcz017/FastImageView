@@ -6,9 +6,20 @@ import FastImageViewCore
 struct FastImageViewApp: App {
     @State private var model = BrowserModel.live()
 
+    init() {
+        // `swift run` 启动的是裸可执行文件，没有 app bundle。
+        // AppKit 因此不会把它变成前台应用，窗口也不会显示。
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate()
+            NSApp.windows.first?.makeKeyAndOrderFront(nil)
+        }
+    }
+
     var body: some Scene {
-        WindowGroup {
+        Window("FastImageView", id: "browser") {
             ContentView(model: model)
+                .background(SingleWindow())
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -16,6 +27,18 @@ struct FastImageViewApp: App {
                     .keyboardShortcut("o")
             }
         }
+    }
+}
+
+private struct SingleWindow: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { SingleWindowView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private final class SingleWindowView: NSView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.tabbingMode = .disallowed
     }
 }
 
