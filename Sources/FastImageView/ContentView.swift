@@ -191,6 +191,14 @@ struct ContentView: View {
     @ViewBuilder
     private func thumbnail(_ file: ImageFile) -> some View {
         let _ = model.renderGeneration
+        thumbnailContent(file)
+            .overlay(alignment: .bottomLeading) {
+                formatBadge(file.format)
+            }
+    }
+
+    @ViewBuilder
+    private func thumbnailContent(_ file: ImageFile) -> some View {
         if file.iCloudState == .notDownloaded {
             label("未下载")
         } else if let image = model.cachedThumbnail(file) {
@@ -201,6 +209,16 @@ struct ContentView: View {
         } else {
             label(" ")
         }
+    }
+
+    private func formatBadge(_ format: ImageFormat) -> some View {
+        Text(format.badge)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(format.isRaw ? Color.orange.opacity(0.92) : Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 3))
+            .padding(4)
     }
 
     private func label(_ text: String) -> some View {

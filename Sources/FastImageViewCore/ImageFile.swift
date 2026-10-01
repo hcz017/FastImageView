@@ -13,6 +13,27 @@ public enum ImageFormat: String, CaseIterable, Equatable, Sendable {
         }
     }
 
+    public var badge: String {
+        switch self {
+        case .jpeg: "JPG"
+        case .png: "PNG"
+        case .heic: "HEIC"
+        case .gif: "GIF"
+        case .tiff: "TIF"
+        case .webp: "WEBP"
+        case .bmp: "BMP"
+        case .nef: "NEF"
+        case .cr2: "CR2"
+        case .cr3: "CR3"
+        case .arw: "ARW"
+        case .raf: "RAF"
+        case .orf: "ORF"
+        case .rw2: "RW2"
+        case .dng: "DNG"
+        case .pef: "PEF"
+        }
+    }
+
     private static let byExtension: [String: ImageFormat] = [
         "jpg": .jpeg, "jpeg": .jpeg, "png": .png, "heic": .heic, "heif": .heic,
         "gif": .gif, "tif": .tiff, "tiff": .tiff, "webp": .webp, "bmp": .bmp,

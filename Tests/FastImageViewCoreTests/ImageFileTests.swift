@@ -13,6 +13,15 @@ final class ImageFileTests: XCTestCase {
         XCTAssertNil(ImageFormat.from(filename: "archive"))
     }
 
+    func testBadgeUsesShortNamesAndMarksRaw() {
+        XCTAssertEqual(ImageFormat.jpeg.badge, "JPG")
+        XCTAssertEqual(ImageFormat.tiff.badge, "TIF")
+        XCTAssertEqual(ImageFormat.heic.badge, "HEIC")
+        XCTAssertEqual(ImageFormat.nef.badge, "NEF")
+        XCTAssertTrue(ImageFormat.cr3.isRaw)
+        XCTAssertFalse(ImageFormat.png.isRaw)
+    }
+
     func testICloudMapping() {
         XCTAssertEqual(ICloudState.map(isUbiquitous: false, status: .notDownloaded), .notCloud)
         XCTAssertEqual(ICloudState.map(isUbiquitous: true, status: .notDownloaded), .notDownloaded)
