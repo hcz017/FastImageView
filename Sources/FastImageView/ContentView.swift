@@ -4,6 +4,7 @@ import SwiftUI
 import FastImageViewCore
 
 struct ContentView: View {
+    @Environment(\.appTheme) private var theme
     @Bindable var model: BrowserModel
     @FocusState private var keywordFocused: Bool
     @State private var scroll = ScrollAccumulator()
@@ -17,6 +18,7 @@ struct ContentView: View {
                 header
                 if model.mode == .grid {
                     filterBar
+                    Divider()
                     grid
                 } else if let file = model.catalog.selectedFile {
                     viewer(file)
@@ -45,84 +47,158 @@ struct ContentView: View {
         Binding(get: { model.statusMessage != nil }, set: { if !$0 { model.statusMessage = nil } })
     }
 
+    // MARK: - 空状态（未打开文件夹）
+
     private var empty: some View {
-        VStack(spacing: 16) {
-            Button("打开文件夹") { chooseFolder(model) }
-            if let openError = model.openError { Text(openError) }
+        VStack(spacing: theme.spacingXL) {
+            VStack(spacing: theme.spacingSM) {
+                Image(systemName: "photo.stack")
+                    .font(.largeTitle)
+                    .imageScale(.large)
+                    .foregroundStyle(.secondary)
+                Text("打开一个文件夹开始浏览")
+                    .font(.title2)
+            }
+            Button("打开文件夹…") { chooseFolder(model) }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            if let openError = model.openError {
+                Text(openError)
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
             if !model.recentFolders.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("最近打开")
-                        .font(.headline)
-                        .padding(.bottom, 4)
-                    ForEach(model.recentFolders, id: \.path) { url in
-                        Button {
-                            model.open(folder: url)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(url.lastPathComponent)
-                                Text(url.path)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 8)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .frame(maxWidth: 480)
+                recentFolders
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.regularMaterial)
     }
+
+    private var recentFolders: some View {
+        VStack(alignment: .leading, spacing: theme.spacingSM) {
+            Text("最近打开")
+                .font(.headline)
+            ForEach(model.recentFolders, id: \.path) { url in
+                Button {
+                    model.open(folder: url)
+                } label: {
+                    HStack(spacing: theme.spacingSM) {
+                        Image(systemName: "folder")
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(url.lastPathComponent)
+                                .lineLimit(1)
+                            Text(url.path)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.horizontal, theme.spacingMD)
+                    .padding(.vertical, theme.spacingSM)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(
+                    theme.recentRowFill,
+                    in: RoundedRectangle(cornerRadius: theme.radiusSmall)
+                )
+            }
+        }
+        .frame(maxWidth: 480)
+        .padding(theme.spacingLG)
+        .background(.background, in: RoundedRectangle(cornerRadius: theme.radiusLarge))
+    }
+
+    // MARK: - 头部
 
     private var header: some View {
-        HStack {
-            Button("打开文件夹") { chooseFolder(model) }
-            Text(model.folderURL?.lastPathComponent ?? "")
-            Spacer()
-        }
-        .padding(8)
-    }
-
-    private var filterBar: some View {
-        HStack {
-            TextField("文件名", text: keyword)
-                .textFieldStyle(.roundedBorder)
-                .focused($keywordFocused)
-            ForEach(model.catalog.availableFormats, id: \.self) { format in
-                let on = model.catalog.selectedFormats.contains(format)
-                Button(format.rawValue) { model.toggleFormat(format) }
-                    .buttonStyle(.bordered)
-                    .tint(on ? .accentColor : nil)
-                    .focusable(false)
+        HStack(spacing: theme.spacingSM) {
+            Button("打开文件夹…") { chooseFolder(model) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.folderURL?.lastPathComponent ?? "")
+                    .font(.headline)
+                    .lineLimit(1)
+                if model.catalog.keyword.isEmpty && model.catalog.selectedFormats.isEmpty {
+                    Text("\(model.catalog.files.count) 张图片")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("筛选出 \(model.catalog.filtered.count) / \(model.catalog.files.count) 张")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, theme.spacingLG)
+        .padding(.vertical, theme.spacingSM)
+        .background(.bar)
+    }
+
+    // MARK: - 筛选栏
+
+    private var filterBar: some View {
+        HStack(spacing: theme.spacingSM) {
+            HStack(spacing: theme.spacingXS) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("搜索文件名", text: keyword)
+                    .textFieldStyle(.plain)
+                    .focused($keywordFocused)
+            }
+            .padding(.horizontal, theme.spacingSM)
+            .padding(.vertical, theme.spacingXS)
+            .background(theme.searchFieldFill, in: RoundedRectangle(cornerRadius: theme.radiusSmall))
+            .frame(width: 220)
+            ForEach(model.catalog.availableFormats, id: \.self) { format in
+                Toggle(format.badge, isOn: formatToggle(format))
+                    .toggleStyle(.button)
+                    .controlSize(.small)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, theme.spacingLG)
+        .padding(.vertical, theme.spacingSM)
+        .background(.bar)
+    }
+
+    private func formatToggle(_ format: ImageFormat) -> Binding<Bool> {
+        Binding(
+            get: { model.catalog.selectedFormats.contains(format) },
+            set: { _ in model.toggleFormat(format) }
+        )
     }
 
     private var keyword: Binding<String> {
         Binding(get: { model.catalog.keyword }, set: { model.setKeyword($0) })
     }
 
+    // MARK: - 网格
+
     private var grid: some View {
-        let columns = [GridItem(.adaptive(minimum: 160), spacing: 8)]
+        let columns = [GridItem(.adaptive(minimum: 160), spacing: theme.spacingSM)]
         return ScrollViewReader { proxy in
             ScrollView {
                 if model.catalog.filtered.isEmpty {
-                    Text("没有匹配的图片").frame(maxWidth: .infinity, minHeight: 240)
+                    StatePlaceholder(
+                        icon: "photo.on.rectangle.angled",
+                        message: "没有匹配的图片"
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 240)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 8) {
+                    LazyVGrid(columns: columns, spacing: theme.spacingSM) {
                         ForEach(model.catalog.filtered) { file in
                             cell(file).id(file.url)
                         }
                     }
-                    .padding(8)
+                    .padding(theme.spacingSM)
                 }
             }
             .onAppear { revealSelection(using: proxy) }
@@ -139,12 +215,26 @@ struct ContentView: View {
 
     private func cell(_ file: ImageFile) -> some View {
         let selected = model.catalog.selectionID == file.url
-        return VStack {
+        return VStack(spacing: theme.spacingXS) {
             thumbnail(file)
-            Text(file.filename).lineLimit(1).font(.caption)
+                .clipShape(RoundedRectangle(cornerRadius: theme.radiusSmall))
+                .overlay(alignment: .bottomLeading) {
+                    formatBadge(file.format)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: theme.radiusSmall)
+                        .strokeBorder(
+                            selected ? theme.selectionStroke : .clear,
+                            lineWidth: theme.selectionStrokeWidth
+                        )
+                }
+            Text(file.filename)
+                .lineLimit(1)
+                .font(.caption)
+                .foregroundStyle(selected ? .primary : .secondary)
         }
-        .padding(4)
-        .background(selected ? Color.accentColor.opacity(0.25) : Color.clear)
+        .padding(theme.spacingXS)
+        .background(selected ? theme.selectionFill : Color.clear, in: RoundedRectangle(cornerRadius: theme.radiusLarge))
         .overlay {
             ClickCountCatcher { clickCount in
                 keywordFocused = false
@@ -162,29 +252,58 @@ struct ContentView: View {
         model.select(url: file.url)
     }
 
+    // MARK: - 查看器
+
     private func viewer(_ file: ImageFile) -> some View {
         let _ = model.renderGeneration
-        return VStack {
-            Text(file.filename)
-            Group {
-                if file.iCloudState == .notDownloaded {
-                    Text("未下载")
-                } else if model.failed(file.url) {
-                    Text("无法打开")
-                        .onAppear { model.noteUnavailable(file.url) }
-                } else if let image = model.cachedViewerImage(file) {
-                    if model.fit == .actual {
-                        ScrollView([.horizontal, .vertical]) {
-                            Image(decorative: image, scale: 1)
-                        }
-                    } else {
-                        Image(decorative: image, scale: 1).resizable().scaledToFit()
-                    }
-                } else {
-                    ProgressView()
+        return ZStack {
+            viewerContent(file)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .overlay(alignment: .top) {
+            HStack(spacing: theme.spacingSM) {
+                Text(file.filename)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                Picker("显示方式", selection: fitMode) {
+                    Text("适应窗口").tag(ViewerFit.fit)
+                    Text("实际像素").tag(ViewerFit.actual)
                 }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, theme.spacingLG)
+            .padding(.vertical, theme.spacingSM)
+            .background(.bar)
+        }
+    }
+
+    private var fitMode: Binding<ViewerFit> {
+        Binding(
+            get: { model.fit },
+            set: { model.setFit($0, screenLongEdge: screenLongEdge()) }
+        )
+    }
+
+    @ViewBuilder
+    private func viewerContent(_ file: ImageFile) -> some View {
+        if file.iCloudState == .notDownloaded {
+            StatePlaceholder(icon: "icloud.and.arrow.down", message: "未下载")
+        } else if model.failed(file.url) {
+            StatePlaceholder(icon: "exclamationmark.triangle", message: "无法打开")
+                .onAppear { model.noteUnavailable(file.url) }
+        } else if let image = model.cachedViewerImage(file) {
+            if model.fit == .actual {
+                ScrollView([.horizontal, .vertical]) {
+                    Image(decorative: image, scale: 1)
+                }
+            } else {
+                Image(decorative: image, scale: 1).resizable().scaledToFit()
+                    .padding(theme.spacingLG)
+            }
+        } else {
+            StatePlaceholder(icon: "photo", message: "加载中…")
         }
     }
 
@@ -192,39 +311,63 @@ struct ContentView: View {
     private func thumbnail(_ file: ImageFile) -> some View {
         let _ = model.renderGeneration
         thumbnailContent(file)
-            .overlay(alignment: .bottomLeading) {
-                formatBadge(file.format)
-            }
     }
 
     @ViewBuilder
     private func thumbnailContent(_ file: ImageFile) -> some View {
         if file.iCloudState == .notDownloaded {
-            label("未下载")
+            thumbnailLabel("未下载")
         } else if let image = model.cachedThumbnail(file) {
             Image(decorative: image, scale: 1).resizable().scaledToFit()
         } else if model.failed(file.url) {
-            label("无法打开")
+            thumbnailLabel("无法打开")
                 .onAppear { model.noteUnavailable(file.url) }
         } else {
-            label(" ")
+            thumbnailLabel(" ")
         }
+    }
+
+    private func thumbnailLabel(_ text: String) -> some View {
+        ZStack {
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(width: 160, height: 120)
+        .background(theme.thumbnailPlaceholder)
     }
 
     private func formatBadge(_ format: ImageFormat) -> some View {
         Text(format.badge)
-            .font(.system(size: 9, weight: .semibold))
+            .font(.caption2.weight(.semibold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
-            .background(format.isRaw ? Color.orange.opacity(0.92) : Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 3))
-            .padding(4)
+            .padding(.horizontal, theme.spacingXS)
+            .padding(.vertical, 2)
+            .background(
+                theme.badgeBackground(isRaw: format.isRaw),
+                in: RoundedRectangle(cornerRadius: theme.radiusBadge)
+            )
+            .padding(theme.spacingXS)
     }
+}
 
-    private func label(_ text: String) -> some View {
-        ZStack { Text(text) }
-            .frame(width: 160, height: 120)
-            .background(Color.gray.opacity(0.15))
+/// 空状态 / 加载状态 / 错误状态的统一占位组件。
+private struct StatePlaceholder: View {
+    @Environment(\.appTheme) private var theme
+
+    var icon: String
+    var message: String
+
+    var body: some View {
+        VStack(spacing: theme.spacingMD) {
+            Image(systemName: icon)
+                .font(.largeTitle)
+                .imageScale(.large)
+                .foregroundStyle(.tertiary)
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
     }
 }
 

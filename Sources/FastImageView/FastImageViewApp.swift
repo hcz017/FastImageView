@@ -19,6 +19,7 @@ struct FastImageViewApp: App {
     var body: some Scene {
         Window("FastImageView", id: "browser") {
             ContentView(model: model)
+                .environment(\.appTheme, AppTheme())
                 .background(SingleWindow())
         }
         .commands {
