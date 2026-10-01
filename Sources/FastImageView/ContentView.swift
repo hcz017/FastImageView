@@ -275,6 +275,7 @@ struct ContentView: View {
                     Text("实际像素").tag(ViewerFit.actual)
                 }
                 .pickerStyle(.segmented)
+                .labelsHidden()
                 .frame(width: 180)
             }
             .padding(.horizontal, theme.spacingLG)
