@@ -14,6 +14,12 @@ struct AppTheme {
     let radiusSmall: CGFloat = 8
     let radiusLarge: CGFloat = 12
 
+    // MARK: 网格
+    let tileMinWidth: CGFloat = 168
+    let tileMaxWidth: CGFloat = 220
+    let tileAspectRatio: CGFloat = 4.0 / 3.0
+    let gridSpacing: CGFloat = 12
+
     // MARK: 颜色
     let thumbnailPlaceholder = Color.gray.opacity(0.15)
     let recentRowFill = Color.gray.opacity(0.08)
@@ -21,9 +27,14 @@ struct AppTheme {
     let selectionFill = Color.accentColor.opacity(0.18)
     let selectionStroke = Color.accentColor
     let selectionStrokeWidth: CGFloat = 2
+    let focusStroke = Color.accentColor.opacity(0.65)
 
     func badgeBackground(isRaw: Bool) -> Color {
-        isRaw ? Color.orange.opacity(0.92) : Color.black.opacity(0.55)
+        isRaw ? Color.orange.opacity(0.95) : Color.black.opacity(0.55)
+    }
+
+    func badgeForeground(isRaw: Bool) -> Color {
+        isRaw ? .black.opacity(0.85) : .white
     }
 }
 

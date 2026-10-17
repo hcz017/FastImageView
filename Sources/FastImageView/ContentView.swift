@@ -8,6 +8,7 @@ struct ContentView: View {
     @Bindable var model: BrowserModel
     @FocusState private var keywordFocused: Bool
     @State private var scroll = ScrollAccumulator()
+    @StateObject private var toasts = ToastModel()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +26,13 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 720, minHeight: 480)
+        .overlay(alignment: .bottom) {
+            toastView
+        }
+        .animation(.easeOut(duration: 0.18), value: toasts.current?.id)
+        .onChange(of: model.folderURL) { _, _ in
+            toasts.dismiss()
+        }
         .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
             model.syncPreviewGeneration()
         }
@@ -32,7 +40,8 @@ struct ContentView: View {
             EventMonitor(
                 keywordFocused: $keywordFocused,
                 scroll: $scroll,
-                model: model
+                model: model,
+                toasts: toasts
             )
         }
         .alert("无法完成操作", isPresented: errorPresented) {
@@ -49,28 +58,40 @@ struct ContentView: View {
     // MARK: - 空状态（未打开文件夹）
 
     private var empty: some View {
-        VStack(spacing: theme.spacingXL) {
-            VStack(spacing: theme.spacingSM) {
-                Image(systemName: "photo.stack")
-                    .font(.largeTitle)
-                    .imageScale(.large)
-                    .foregroundStyle(.secondary)
-                Text("打开一个文件夹开始浏览")
-                    .font(.title2)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: theme.spacingXL) {
+                    VStack(spacing: theme.spacingSM) {
+                        Image(systemName: "photo.stack")
+                            .font(.largeTitle)
+                            .imageScale(.large)
+                            .foregroundStyle(.secondary)
+                        Text("打开一个文件夹开始浏览")
+                            .font(.title2)
+                        Text("支持 JPG、PNG、HEIC、TIFF 与常见相机原片")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button("打开文件夹…") { chooseFolder(model) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .keyboardShortcut(.defaultAction)
+                    if let openError = model.openError {
+                        Text(openError)
+                            .font(.callout)
+                            .foregroundStyle(.red)
+                            .multilineTextAlignment(.center)
+                    }
+                    if !model.recentFolders.isEmpty {
+                        recentFolders
+                    }
+                }
+                .padding(.horizontal, theme.spacingLG)
+                .padding(.vertical, theme.spacingXL)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
             }
-            Button("打开文件夹…") { chooseFolder(model) }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            if let openError = model.openError {
-                Text(openError)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-            }
-            if !model.recentFolders.isEmpty {
-                recentFolders
-            }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.regularMaterial)
     }
 
@@ -119,28 +140,96 @@ struct ContentView: View {
 
     private var filterBar: some View {
         HStack(spacing: theme.spacingSM) {
-            HStack(spacing: theme.spacingXS) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜索文件名", text: keyword)
-                    .textFieldStyle(.plain)
-                    .focused($keywordFocused)
+            Button {
+                chooseFolder(model)
+            } label: {
+                Label("打开", systemImage: "folder")
             }
-            .padding(.horizontal, theme.spacingSM)
-            .padding(.vertical, theme.spacingXS)
-            .background(theme.searchFieldFill, in: RoundedRectangle(cornerRadius: theme.radiusSmall))
-            .frame(width: 220)
-            ForEach(model.catalog.availableFormats, id: \.self) { format in
-                Toggle(format.badge, isOn: formatToggle(format))
-                    .toggleStyle(.button)
-                    .controlSize(.small)
-            }
-            Spacer(minLength: theme.spacingMD)
+            .controlSize(.small)
+            .help("打开文件夹 (⌘O)")
+
+            searchField
+            formatMenu
+
+            Spacer(minLength: theme.spacingSM)
+
             folderInfo
+
+            if model.catalog.selectedFile != nil {
+                Divider()
+                    .frame(height: 16)
+                Button(role: .destructive) {
+                    toasts.deleteSelection(in: model)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("移到废纸篓 (Delete)")
+                .accessibilityLabel("移到废纸篓")
+            }
         }
         .padding(.horizontal, theme.spacingLG)
         .padding(.vertical, theme.spacingSM)
         .background(.bar)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: theme.spacingXS) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("搜索文件名", text: keyword)
+                .textFieldStyle(.plain)
+                .focused($keywordFocused)
+            if !model.catalog.keyword.isEmpty {
+                Button {
+                    model.setKeyword("")
+                    keywordFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("清除搜索")
+                .accessibilityLabel("清除搜索")
+            }
+        }
+        .padding(.horizontal, theme.spacingSM)
+        .padding(.vertical, theme.spacingXS)
+        .background(theme.searchFieldFill, in: RoundedRectangle(cornerRadius: theme.radiusSmall))
+        .overlay {
+            RoundedRectangle(cornerRadius: theme.radiusSmall)
+                .strokeBorder(keywordFocused ? theme.focusStroke : .clear, lineWidth: 2)
+        }
+        .frame(minWidth: 150, idealWidth: 220, maxWidth: 260)
+    }
+
+    private var formatMenu: some View {
+        Menu {
+            Button("全部格式") { clearFormats() }
+                .disabled(model.catalog.selectedFormats.isEmpty)
+            Divider()
+            ForEach(model.catalog.availableFormats, id: \.self) { format in
+                Toggle(isOn: formatToggle(format)) {
+                    Text(format.badge)
+                }
+            }
+        } label: {
+            HStack(spacing: theme.spacingXS) {
+                Image(systemName: "line.3.horizontal.decrease.circle")
+                Text(formatMenuTitle)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("按格式筛选")
+        .disabled(model.catalog.availableFormats.isEmpty)
+    }
+
+    private var formatMenuTitle: String {
+        let selected = model.catalog.selectedFormats
+        if selected.isEmpty { return "格式" }
+        if selected.count == 1, let format = selected.first { return "格式 · \(format.badge)" }
+        return "格式 · \(selected.count)"
     }
 
     private var folderInfo: some View {
@@ -150,11 +239,13 @@ struct ContentView: View {
             Text(model.folderURL?.lastPathComponent ?? "")
                 .font(.headline)
                 .lineLimit(1)
+                .truncationMode(.middle)
+                .layoutPriority(-1)
             Text(folderCountText)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize()
         }
-        .layoutPriority(1)
     }
 
     private var folderCountText: String {
@@ -162,7 +253,7 @@ struct ContentView: View {
         if model.catalog.keyword.isEmpty && model.catalog.selectedFormats.isEmpty {
             return "\(total) 张"
         }
-        return "\(model.catalog.filtered.count) / \(total) 张"
+        return "\(model.catalog.filtered.count)/\(total) 张"
     }
 
     private func formatToggle(_ format: ImageFormat) -> Binding<Bool> {
@@ -172,6 +263,18 @@ struct ContentView: View {
         )
     }
 
+    private func clearFormats() {
+        let formats = model.catalog.selectedFormats
+        for format in formats {
+            model.toggleFormat(format)
+        }
+    }
+
+    private func clearFilters() {
+        model.setKeyword("")
+        clearFormats()
+    }
+
     private var keyword: Binding<String> {
         Binding(get: { model.catalog.keyword }, set: { model.setKeyword($0) })
     }
@@ -179,27 +282,36 @@ struct ContentView: View {
     // MARK: - 网格
 
     private var grid: some View {
-        let columns = [GridItem(.adaptive(minimum: 160), spacing: theme.spacingSM)]
-        return ScrollViewReader { proxy in
-            ScrollView {
-                if model.catalog.filtered.isEmpty {
-                    StatePlaceholder(
-                        icon: "photo.on.rectangle.angled",
-                        message: "没有匹配的图片"
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 240)
-                } else {
-                    LazyVGrid(columns: columns, spacing: theme.spacingSM) {
-                        ForEach(model.catalog.filtered) { file in
-                            cell(file).id(file.url)
+        let columns = [
+            GridItem(
+                .adaptive(minimum: theme.tileMinWidth, maximum: theme.tileMaxWidth),
+                spacing: theme.gridSpacing
+            )
+        ]
+        return Group {
+            if model.catalog.filtered.isEmpty {
+                StatePlaceholder(
+                    icon: "photo.on.rectangle.angled",
+                    message: "没有匹配的图片",
+                    actionTitle: "清除筛选",
+                    action: clearFilters
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: theme.gridSpacing) {
+                            ForEach(model.catalog.filtered) { file in
+                                cell(file).id(file.url)
+                            }
                         }
+                        .padding(theme.spacingLG)
                     }
-                    .padding(theme.spacingSM)
+                    .onAppear { revealSelection(using: proxy) }
+                    .onChange(of: model.catalog.selectionID) { _, _ in
+                        revealSelection(using: proxy)
+                    }
                 }
-            }
-            .onAppear { revealSelection(using: proxy) }
-            .onChange(of: model.catalog.selectionID) { _, _ in
-                revealSelection(using: proxy)
             }
         }
     }
@@ -211,25 +323,40 @@ struct ContentView: View {
 
     private func cell(_ file: ImageFile) -> some View {
         let selected = model.catalog.selectionID == file.url
-        return VStack(spacing: theme.spacingXS) {
-            thumbnail(file)
-                .clipShape(RoundedRectangle(cornerRadius: theme.radiusSmall))
-                .overlay(alignment: .bottomLeading) {
-                    formatBadge(file.format)
+        return VStack(spacing: theme.spacingSM) {
+            ZStack {
+                theme.thumbnailPlaceholder
+                thumbnail(file)
+                    .scaledToFit()
+            }
+            .aspectRatio(theme.tileAspectRatio, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: theme.radiusSmall))
+            .overlay(alignment: .bottomLeading) {
+                formatBadge(file.format)
+            }
+            .overlay(alignment: .topTrailing) {
+                if selected {
+                    selectionCheckmark
                 }
-                .overlay {
-                    RoundedRectangle(cornerRadius: theme.radiusSmall)
-                        .strokeBorder(
-                            selected ? theme.selectionStroke : .clear,
-                            lineWidth: theme.selectionStrokeWidth
-                        )
-                }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: theme.radiusSmall)
+                    .strokeBorder(
+                        selected ? theme.selectionStroke : .clear,
+                        lineWidth: theme.selectionStrokeWidth
+                    )
+            }
             Text(file.filename)
                 .lineLimit(1)
+                .truncationMode(.middle)
                 .font(.caption)
+                .fontWeight(selected ? .medium : .regular)
                 .foregroundStyle(selected ? .primary : .secondary)
+                .help(file.filename)
         }
         .padding(theme.spacingXS)
+        .contentShape(Rectangle())
         .background(selected ? theme.selectionFill : Color.clear, in: RoundedRectangle(cornerRadius: theme.radiusLarge))
         .overlay {
             ClickCountCatcher { clickCount in
@@ -244,6 +371,16 @@ struct ContentView: View {
         .onDisappear { model.thumbnailRelease(file) }
     }
 
+    private var selectionCheckmark: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .font(.title3)
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, theme.selectionStroke)
+            .padding(theme.spacingXS)
+            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+            .accessibilityHidden(true)
+    }
+
     private func select(_ file: ImageFile) {
         model.select(url: file.url)
     }
@@ -252,36 +389,62 @@ struct ContentView: View {
 
     private func viewer(_ file: ImageFile) -> some View {
         let _ = model.renderGeneration
-        return ZStack {
-            viewerContent(file)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .overlay(alignment: .top) {
-            HStack(spacing: theme.spacingSM) {
-                Button {
-                    model.closeViewer()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("返回网格 (Esc)")
-                Text(file.filename)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer()
-                Picker("显示方式", selection: fitMode) {
-                    Text("适应窗口").tag(ViewerFit.fit)
-                    Text("实际像素").tag(ViewerFit.actual)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 180)
+        return viewerContent(file)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                viewerBar(file)
             }
-            .padding(.horizontal, theme.spacingLG)
-            .padding(.vertical, theme.spacingSM)
-            .background(.bar)
+    }
+
+    private func viewerBar(_ file: ImageFile) -> some View {
+        HStack(spacing: theme.spacingSM) {
+            Button {
+                model.closeViewer()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("返回网格 (Esc)")
+            .accessibilityLabel("返回网格")
+            Text(file.filename)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(viewerIndexText(file))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Spacer()
+            Picker("显示方式", selection: fitMode) {
+                Text("适合窗口").tag(ViewerFit.fit)
+                Text("实际像素").tag(ViewerFit.actual)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 180)
+            Divider()
+                .frame(height: 16)
+            Button(role: .destructive) {
+                toasts.deleteSelection(in: model)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("移到废纸篓 (Delete)")
+            .accessibilityLabel("移到废纸篓")
         }
+        .padding(.horizontal, theme.spacingLG)
+        .padding(.vertical, theme.spacingSM)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    private func viewerIndexText(_ file: ImageFile) -> String {
+        guard let index = model.catalog.filtered.firstIndex(where: { $0.url == file.url }) else {
+            return ""
+        }
+        return "\(index + 1)/\(model.catalog.filtered.count)"
     }
 
     private var fitMode: Binding<ViewerFit> {
@@ -338,14 +501,13 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .frame(width: 160, height: 120)
-        .background(theme.thumbnailPlaceholder)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func formatBadge(_ format: ImageFormat) -> some View {
         Text(format.badge)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(theme.badgeForeground(isRaw: format.isRaw))
             .padding(.horizontal, theme.spacingXS)
             .padding(.vertical, theme.spacingXS)
             .background(
@@ -353,6 +515,88 @@ struct ContentView: View {
                 in: RoundedRectangle(cornerRadius: theme.radiusBadge)
             )
             .padding(theme.spacingXS)
+    }
+
+    @ViewBuilder
+    private var toastView: some View {
+        if let toast = toasts.current {
+            HStack(spacing: theme.spacingMD) {
+                Image(systemName: toast.canUndo ? "trash" : "checkmark.circle")
+                    .foregroundStyle(.secondary)
+                Text(toast.message)
+                    .font(.callout)
+                if toast.canUndo {
+                    Button("撤销") {
+                        toasts.undo(in: model)
+                    }
+                    .buttonStyle(.borderless)
+                    .fontWeight(.semibold)
+                    .help("撤销移到废纸篓 (⌘Z)")
+                }
+                Button {
+                    toasts.dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("关闭")
+                .accessibilityLabel("关闭提示")
+            }
+            .padding(.horizontal, theme.spacingLG)
+            .padding(.vertical, theme.spacingSM)
+            .background(.regularMaterial, in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(.white.opacity(0.12))
+            }
+            .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+            .padding(.bottom, theme.spacingLG)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+}
+
+@MainActor
+private final class ToastModel: ObservableObject {
+    struct Toast: Identifiable, Equatable {
+        let id = UUID()
+        let message: String
+        let canUndo: Bool
+    }
+
+    @Published private(set) var current: Toast?
+    private var dismissTask: Task<Void, Never>?
+
+    func deleteSelection(in model: BrowserModel) {
+        let before = model.catalog.files.count
+        model.deleteSelected()
+        guard model.catalog.files.count < before else { return }
+        show("已移到废纸篓", canUndo: true)
+    }
+
+    func undo(in model: BrowserModel) {
+        let before = model.catalog.files.count
+        model.undo()
+        guard model.catalog.files.count > before else { return }
+        show("已恢复", canUndo: false)
+    }
+
+    func show(_ message: String, canUndo: Bool) {
+        dismissTask?.cancel()
+        current = Toast(message: message, canUndo: canUndo)
+        let id = current?.id
+        let delay: UInt64 = canUndo ? 6_000_000_000 : 3_000_000_000
+        dismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, self?.current?.id == id else { return }
+            self?.current = nil
+        }
+    }
+
+    func dismiss() {
+        dismissTask?.cancel()
+        current = nil
     }
 }
 
@@ -362,6 +606,8 @@ private struct StatePlaceholder: View {
 
     var icon: String
     var message: String
+    var actionTitle: String?
+    var action: (() -> Void)?
 
     var body: some View {
         VStack(spacing: theme.spacingMD) {
@@ -372,6 +618,11 @@ private struct StatePlaceholder: View {
             Text(message)
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
         }
     }
 }
@@ -413,6 +664,7 @@ private struct EventMonitor: NSViewRepresentable {
     @FocusState.Binding var keywordFocused: Bool
     @Binding var scroll: ScrollAccumulator
     var model: BrowserModel
+    var toasts: ToastModel
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -428,6 +680,7 @@ private struct EventMonitor: NSViewRepresentable {
         context.coordinator.keywordFocused = $keywordFocused
         context.coordinator.scroll = $scroll
         context.coordinator.model = model
+        context.coordinator.toasts = toasts
         nsView.coordinator = context.coordinator
     }
 
@@ -436,6 +689,7 @@ private struct EventMonitor: NSViewRepresentable {
         var keywordFocused: FocusState<Bool>.Binding?
         var scroll: Binding<ScrollAccumulator>?
         var model: BrowserModel?
+        var toasts: ToastModel?
 
         func handleKeyDown(_ event: NSEvent) -> NSEvent? {
             guard let model, let keywordFocused else { return event }
@@ -452,10 +706,18 @@ private struct EventMonitor: NSViewRepresentable {
                 keywordFocused.wrappedValue = false
                 return nil
             case .deletePhoto:
-                model.deleteSelected()
+                if let toasts {
+                    toasts.deleteSelection(in: model)
+                } else {
+                    model.deleteSelected()
+                }
                 return nil
             case .undoTrash:
-                model.undo()
+                if let toasts {
+                    toasts.undo(in: model)
+                } else {
+                    model.undo()
+                }
                 return nil
             case .move(let delta):
                 model.moveSelection(by: delta, screenLongEdge: screenLongEdge())
