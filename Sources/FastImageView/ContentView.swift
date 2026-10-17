@@ -335,11 +335,6 @@ struct ContentView: View {
             .overlay(alignment: .bottomLeading) {
                 formatBadge(file.format)
             }
-            .overlay(alignment: .topTrailing) {
-                if selected {
-                    selectionCheckmark
-                }
-            }
             .overlay {
                 RoundedRectangle(cornerRadius: theme.radiusSmall)
                     .strokeBorder(
@@ -369,16 +364,6 @@ struct ContentView: View {
         }
         .onAppear { model.thumbnailRequest(file) }
         .onDisappear { model.thumbnailRelease(file) }
-    }
-
-    private var selectionCheckmark: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .font(.title3)
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(.white, theme.selectionStroke)
-            .padding(theme.spacingXS)
-            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
-            .accessibilityHidden(true)
     }
 
     private func select(_ file: ImageFile) {
