@@ -29,6 +29,14 @@ struct FastImageViewApp: App {
                 Button("打开文件夹") { chooseFolder(model) }
                     .keyboardShortcut("o")
             }
+            CommandGroup(after: .newItem) {
+                Menu("打开最近") {
+                    ForEach(model.recentFolders, id: \.path) { url in
+                        Button(url.lastPathComponent) { model.open(folder: url) }
+                    }
+                }
+                .disabled(model.recentFolders.isEmpty)
+            }
         }
     }
 }

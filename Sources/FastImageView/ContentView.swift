@@ -28,6 +28,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 720, minHeight: 480)
+        .navigationTitle(model.folderURL?.lastPathComponent ?? "FastImageView")
         .overlay(alignment: .bottom) {
             toastView
         }
@@ -372,7 +373,8 @@ struct ContentView: View {
                     } else if hoveredURL == file.url {
                         hoveredURL = nil
                     }
-                }
+                },
+                makeMenu: { makeContextMenu(for: file) }
             )
         }
         .onAppear { model.thumbnailRequest(file) }
@@ -383,6 +385,47 @@ struct ContentView: View {
         model.select(url: file.url)
     }
 
+    private func makeContextMenu(for file: ImageFile) -> NSMenu {
+        model.select(url: file.url)
+        keywordFocused = false
+        let model = self.model
+        let toasts = self.toasts
+        let target = ContextMenuTarget()
+        target.onOpen = {
+            model.openViewer(screenLongEdge: screenLongEdge())
+        }
+        target.onReveal = {
+            NSWorkspace.shared.activateFileViewerSelecting([file.url])
+        }
+        target.onCopyName = {
+            copyFilename(file)
+        }
+        target.onTrash = {
+            toasts.deleteSelection(in: model)
+        }
+
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        addContextItem(menu, title: "在大图中打开", action: #selector(ContextMenuTarget.openAction(_:)), target: target)
+        addContextItem(menu, title: "在访达中显示", action: #selector(ContextMenuTarget.revealAction(_:)), target: target)
+        addContextItem(menu, title: "拷贝文件名", action: #selector(ContextMenuTarget.copyNameAction(_:)), target: target)
+        menu.addItem(.separator())
+        addContextItem(menu, title: "移到废纸篓", action: #selector(ContextMenuTarget.trashAction(_:)), target: target)
+        return menu
+    }
+
+    private func addContextItem(_ menu: NSMenu, title: String, action: Selector, target: ContextMenuTarget) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = target
+        item.representedObject = target
+        menu.addItem(item)
+    }
+
+    private func copyFilename(_ file: ImageFile) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(file.filename, forType: .string)
+    }
+
     // MARK: - 查看器
 
     private func viewer(_ file: ImageFile) -> some View {
@@ -390,6 +433,16 @@ struct ContentView: View {
         return viewerContent(file)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.viewerCanvas)
+            .contextMenu {
+                Button("在访达中显示") {
+                    NSWorkspace.shared.activateFileViewerSelecting([file.url])
+                }
+                Button("拷贝文件名") { copyFilename(file) }
+                Divider()
+                Button("移到废纸篓", role: .destructive) {
+                    toasts.deleteSelection(in: model)
+                }
+            }
             .overlay(alignment: .leading) {
                 viewerNavButton(previous: true, file: file)
             }
@@ -677,23 +730,27 @@ func screenLongEdge() -> Int {
 private struct ClickCountCatcher: NSViewRepresentable {
     var onClick: (Int) -> Void
     var onHover: (Bool) -> Void = { _ in }
+    var makeMenu: (() -> NSMenu)? = nil
 
     func makeNSView(context: Context) -> ClickCountView {
         let view = ClickCountView()
         view.onClick = onClick
         view.onHover = onHover
+        view.makeMenu = makeMenu
         return view
     }
 
     func updateNSView(_ nsView: ClickCountView, context: Context) {
         nsView.onClick = onClick
         nsView.onHover = onHover
+        nsView.makeMenu = makeMenu
     }
 }
 
 private final class ClickCountView: NSView {
     var onClick: ((Int) -> Void)?
     var onHover: ((Bool) -> Void)?
+    var makeMenu: (() -> NSMenu)?
     private var hoverTracking: NSTrackingArea?
 
     override func hitTest(_ point: NSPoint) -> NSView? { self }
@@ -724,6 +781,27 @@ private final class ClickCountView: NSView {
     override func mouseDown(with event: NSEvent) {
         onClick?(event.clickCount)
     }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if let menu = makeMenu?() {
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        } else {
+            super.rightMouseDown(with: event)
+        }
+    }
+}
+
+@MainActor
+private final class ContextMenuTarget: NSObject {
+    var onOpen: (() -> Void)?
+    var onReveal: (() -> Void)?
+    var onCopyName: (() -> Void)?
+    var onTrash: (() -> Void)?
+
+    @objc func openAction(_ sender: Any?) { onOpen?() }
+    @objc func revealAction(_ sender: Any?) { onReveal?() }
+    @objc func copyNameAction(_ sender: Any?) { onCopyName?() }
+    @objc func trashAction(_ sender: Any?) { onTrash?() }
 }
 
 private struct EventMonitor: NSViewRepresentable {
