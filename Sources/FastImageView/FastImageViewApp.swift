@@ -4,6 +4,7 @@ import FastImageViewCore
 
 @main
 struct FastImageViewApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var model = BrowserModel.live()
 
     init() {
@@ -21,6 +22,7 @@ struct FastImageViewApp: App {
             ContentView(model: model)
                 .environment(\.appTheme, AppTheme())
                 .background(SingleWindow())
+                .onAppear { appDelegate.attach(model) }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -40,6 +42,28 @@ private final class SingleWindowView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.tabbingMode = .disallowed
+    }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var model: BrowserModel?
+    private var pendingFile: URL?
+
+    func attach(_ model: BrowserModel) {
+        self.model = model
+        guard let file = pendingFile else { return }
+        pendingFile = nil
+        model.openImageFile(file, screenLongEdge: screenLongEdge())
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let file = urls.first else { return }
+        if let model {
+            model.openImageFile(file, screenLongEdge: screenLongEdge())
+        } else {
+            pendingFile = file
+        }
     }
 }
 

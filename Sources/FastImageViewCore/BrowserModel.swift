@@ -40,6 +40,7 @@ public final class BrowserModel {
     public private(set) var recentFolders: [URL]
     private var recentList: RecentFolderList
     private let recentDefaults: UserDefaults?
+    private var pendingSelectionURL: URL?
     private var undoStack: [UndoEntry] = []
     private let scanner: any FolderScanning
     private let deletion: DeletionService
@@ -76,19 +77,40 @@ public final class BrowserModel {
         return generation
     }
 
-    public func open(folder: URL) {
-        let token = beginOpen()
-        pendingFolderURL = folder
+    public func open(folder: URL, selecting file: URL? = nil, screenLongEdge: Int? = nil) {
+        let token = beginOpening(folder: folder, selecting: file, screenLongEdge: screenLongEdge)
         Task {
             let outcome = Result { try self.scanner.scan(folder: folder) }
             await MainActor.run { self.acceptScan(generation: token, outcome: outcome) }
         }
     }
 
+    public func openImageFile(_ url: URL, screenLongEdge: Int) {
+        let file = url.standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: file.path, isDirectory: &isDirectory) else {
+            open(folder: file.deletingLastPathComponent(), selecting: file, screenLongEdge: screenLongEdge)
+            return
+        }
+        if isDirectory.boolValue {
+            open(folder: file, screenLongEdge: screenLongEdge)
+        } else {
+            open(folder: file.deletingLastPathComponent(), selecting: file, screenLongEdge: screenLongEdge)
+        }
+    }
+
+    func beginOpening(folder: URL, selecting file: URL? = nil, screenLongEdge: Int? = nil) -> Int {
+        if let screenLongEdge { self.screenLongEdge = screenLongEdge }
+        pendingFolderURL = folder
+        pendingSelectionURL = file
+        return beginOpen()
+    }
+
     public func acceptScan(generation: Int, outcome: Result<[ImageFile], Error>) {
         guard generation == self.generation else { return }
         switch outcome {
         case .failure(let error):
+            pendingSelectionURL = nil
             if folderURL == nil {
                 openError = error.localizedDescription
                 mode = .noFolder
@@ -107,9 +129,17 @@ public final class BrowserModel {
                     recentList.save(to: recentDefaults)
                 }
             }
-            mode = .grid
             fit = .fit
             openError = nil
+            if let wanted = pendingSelectionURL?.standardizedFileURL.path,
+               let match = files.first(where: { $0.url.standardizedFileURL.path == wanted }) {
+                select(url: match.url)
+                mode = .viewer
+                refreshViewer()
+            } else {
+                mode = .grid
+            }
+            pendingSelectionURL = nil
         }
     }
 

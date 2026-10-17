@@ -131,4 +131,18 @@ final class BrowserModelTests: XCTestCase {
         model.undo()
         XCTAssertEqual(model.catalog.files.map(\.filename), ["b.jpg"])
     }
+
+    func testOpenFileSelectsThatImageInTheViewer() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, pipeline, _) = model(files: files)
+        let generation = model.beginOpening(
+            folder: URL(fileURLWithPath: "/pics"),
+            selecting: files[1].url,
+            screenLongEdge: 1800
+        )
+        model.acceptScan(generation: generation, outcome: .success(files))
+        XCTAssertEqual(model.mode, .viewer)
+        XCTAssertEqual(model.catalog.selectedFile?.filename, "b.jpg")
+        XCTAssertEqual(pipeline.viewerCurrents, [files[1].url])
+    }
 }
