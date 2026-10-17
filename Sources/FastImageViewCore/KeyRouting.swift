@@ -47,7 +47,9 @@ public func interpretKey(_ key: KeyChord, focus: KeyFocus, mode: BrowserMode) ->
     case 124, 125: return .move(1)
     case 123, 126: return .move(-1)
     case 36 where mode == .grid: return .openViewer
+    case 49 where mode == .grid && !key.command: return .openViewer
     case 53 where mode == .viewer: return .closeViewer
+    case 49 where mode == .viewer && !key.command: return .closeViewer
     case 29 where mode == .viewer: return .fit
     case 18 where mode == .viewer: return .actualPixels
     default: return .passThrough

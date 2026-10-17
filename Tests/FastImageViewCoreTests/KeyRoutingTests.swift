@@ -32,4 +32,11 @@ final class KeyRoutingTests: XCTestCase {
         XCTAssertEqual(interpretKey(key(36), focus: .browser, mode: .grid), .openViewer)
         XCTAssertEqual(interpretKey(key(31, command: true, chars: "o"), focus: .keyword, mode: .grid), .openFolder)
     }
+
+    func testSpaceActsLikeQuickLook() {
+        XCTAssertEqual(interpretKey(key(49), focus: .browser, mode: .grid), .openViewer)
+        XCTAssertEqual(interpretKey(key(49), focus: .browser, mode: .viewer), .closeViewer)
+        XCTAssertEqual(interpretKey(key(49), focus: .keyword, mode: .grid), .passThrough)
+        XCTAssertEqual(interpretKey(key(49, command: true), focus: .browser, mode: .grid), .passThrough)
+    }
 }

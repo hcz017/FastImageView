@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// 集中管理配色、间距、圆角等视觉常量；视图里不再出现硬编码值。
@@ -28,6 +29,8 @@ struct AppTheme {
     let selectionStroke = Color.accentColor
     let selectionStrokeWidth: CGFloat = 2
     let focusStroke = Color.accentColor.opacity(0.65)
+    let hoverStroke = Color.primary.opacity(0.18)
+    let viewerCanvas = Color(nsColor: .underPageBackgroundColor)
 
     func badgeBackground(isRaw: Bool) -> Color {
         isRaw ? Color.orange.opacity(0.95) : Color.black.opacity(0.55)

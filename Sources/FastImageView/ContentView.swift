@@ -8,6 +8,8 @@ struct ContentView: View {
     @Bindable var model: BrowserModel
     @FocusState private var keywordFocused: Bool
     @State private var scroll = ScrollAccumulator()
+    @State private var hoveredURL: URL?
+    @State private var viewerHovered = false
     @StateObject private var toasts = ToastModel()
 
     var body: some View {
@@ -338,8 +340,10 @@ struct ContentView: View {
             .overlay {
                 RoundedRectangle(cornerRadius: theme.radiusSmall)
                     .strokeBorder(
-                        selected ? theme.selectionStroke : .clear,
-                        lineWidth: theme.selectionStrokeWidth
+                        selected
+                            ? theme.selectionStroke
+                            : (hoveredURL == file.url ? theme.hoverStroke : .clear),
+                        lineWidth: selected ? theme.selectionStrokeWidth : 1
                     )
             }
             Text(file.filename)
@@ -354,13 +358,22 @@ struct ContentView: View {
         .contentShape(Rectangle())
         .background(selected ? theme.selectionFill : Color.clear, in: RoundedRectangle(cornerRadius: theme.radiusLarge))
         .overlay {
-            ClickCountCatcher { clickCount in
-                keywordFocused = false
-                select(file)
-                if clickCount >= 2 {
-                    model.openViewer(screenLongEdge: screenLongEdge())
+            ClickCountCatcher(
+                onClick: { clickCount in
+                    keywordFocused = false
+                    select(file)
+                    if clickCount >= 2 {
+                        model.openViewer(screenLongEdge: screenLongEdge())
+                    }
+                },
+                onHover: { hovering in
+                    if hovering {
+                        hoveredURL = file.url
+                    } else if hoveredURL == file.url {
+                        hoveredURL = nil
+                    }
                 }
-            }
+            )
         }
         .onAppear { model.thumbnailRequest(file) }
         .onDisappear { model.thumbnailRelease(file) }
@@ -376,9 +389,47 @@ struct ContentView: View {
         let _ = model.renderGeneration
         return viewerContent(file)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.viewerCanvas)
+            .overlay(alignment: .leading) {
+                viewerNavButton(previous: true, file: file)
+            }
+            .overlay(alignment: .trailing) {
+                viewerNavButton(previous: false, file: file)
+            }
+            .onHover { viewerHovered = $0 }
             .safeAreaInset(edge: .top, spacing: 0) {
                 viewerBar(file)
             }
+    }
+
+    @ViewBuilder
+    private func viewerNavButton(previous: Bool, file: ImageFile) -> some View {
+        if viewerHovered {
+            let items = model.catalog.filtered
+            let index = items.firstIndex(where: { $0.url == file.url }) ?? 0
+            let enabled = previous ? index > 0 : index + 1 < items.count
+            Button {
+                model.moveSelection(by: previous ? -1 : 1, screenLongEdge: screenLongEdge())
+            } label: {
+                Image(systemName: previous ? "chevron.left" : "chevron.right")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 38, height: 38)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay(Circle().strokeBorder(.white.opacity(0.14)))
+                    .shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+            }
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.35)
+            .padding(previous ? .leading : .trailing, theme.spacingLG)
+            .help(previous ? "上一张 (←)" : "下一张 (→)")
+            .accessibilityLabel(previous ? "上一张" : "下一张")
+        }
+    }
+
+    private func toggleFit() {
+        model.setFit(model.fit == .fit ? .actual : .fit, screenLongEdge: screenLongEdge())
     }
 
     private func viewerBar(_ file: ImageFile) -> some View {
@@ -450,10 +501,12 @@ struct ContentView: View {
             if model.fit == .actual {
                 ScrollView([.horizontal, .vertical]) {
                     Image(decorative: image, scale: 1)
+                        .onTapGesture(count: 2) { toggleFit() }
                 }
             } else {
                 Image(decorative: image, scale: 1).resizable().scaledToFit()
                     .padding(theme.spacingLG)
+                    .onTapGesture(count: 2) { toggleFit() }
             }
         } else {
             StatePlaceholder(icon: "photo", message: "加载中…")
@@ -623,22 +676,50 @@ func screenLongEdge() -> Int {
 /// Captures AppKit `mouseDown` so `NSEvent.clickCount` distinguishes single vs double click immediately.
 private struct ClickCountCatcher: NSViewRepresentable {
     var onClick: (Int) -> Void
+    var onHover: (Bool) -> Void = { _ in }
 
     func makeNSView(context: Context) -> ClickCountView {
         let view = ClickCountView()
         view.onClick = onClick
+        view.onHover = onHover
         return view
     }
 
     func updateNSView(_ nsView: ClickCountView, context: Context) {
         nsView.onClick = onClick
+        nsView.onHover = onHover
     }
 }
 
 private final class ClickCountView: NSView {
     var onClick: ((Int) -> Void)?
+    var onHover: ((Bool) -> Void)?
+    private var hoverTracking: NSTrackingArea?
 
     override func hitTest(_ point: NSPoint) -> NSView? { self }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTracking {
+            removeTrackingArea(hoverTracking)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHover?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHover?(false)
+    }
 
     override func mouseDown(with event: NSEvent) {
         onClick?(event.clickCount)
