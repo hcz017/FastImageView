@@ -42,6 +42,9 @@ public final class BrowserModel {
     private let recentDefaults: UserDefaults?
     private var pendingSelectionURL: URL?
     private var undoStack: [UndoEntry] = []
+    private var fileIdentity: [String: String] = [:]
+    private var folderRefreshTask: Task<Void, Never>?
+    private let folderWatch: any FolderWatching
     private let scanner: any FolderScanning
     private let deletion: DeletionService
     private let previews: any PreviewPipeline
@@ -51,7 +54,8 @@ public final class BrowserModel {
         deletion: DeletionService,
         previews: any PreviewPipeline,
         recentFolders: RecentFolderList = RecentFolderList(),
-        recentDefaults: UserDefaults? = nil
+        recentDefaults: UserDefaults? = nil,
+        folderWatch: any FolderWatching = IdleFolderWatch()
     ) {
         self.scanner = scanner
         self.deletion = deletion
@@ -59,6 +63,7 @@ public final class BrowserModel {
         self.recentList = recentFolders
         self.recentFolders = recentFolders.urls
         self.recentDefaults = recentDefaults
+        self.folderWatch = folderWatch
     }
 
     public static func live() -> BrowserModel {
@@ -68,7 +73,8 @@ public final class BrowserModel {
             deletion: DeletionService(storage: FileManagerTrashStorage()),
             previews: LivePreviewPipeline(),
             recentFolders: RecentFolderList(defaults: defaults),
-            recentDefaults: defaults
+            recentDefaults: defaults,
+            folderWatch: DispatchFolderWatch()
         )
     }
 
@@ -140,6 +146,63 @@ public final class BrowserModel {
                 mode = .grid
             }
             pendingSelectionURL = nil
+            fileIdentity = FileIdentity.byPath(files)
+            watchCurrentFolder()
+        }
+    }
+
+    func applyFolderListing(_ files: [ImageFile], identityByPath: [String: String]) {
+        let selectedPath = catalog.selectionID?.standardizedFileURL.path
+        if files == catalog.files {
+            fileIdentity = identityByPath
+            return
+        }
+        let oldURLs = Set(catalog.files.map(\.url))
+        let oldToken = selectedPath.flatMap { fileIdentity[$0] }
+        let renamed = renamedSelection(selectedPath: selectedPath, oldToken: oldToken, files: files, identityByPath: identityByPath)
+        catalog.refresh(with: files, renamedSelection: renamed)
+        fileIdentity = identityByPath
+        for url in oldURLs.subtracting(files.map(\.url)) {
+            previews.cancel(url: url)
+        }
+        if mode == .viewer {
+            if catalog.selectedFile == nil { mode = .grid }
+            else { refreshViewer() }
+        }
+    }
+
+    private func renamedSelection(selectedPath: String?, oldToken: String?, files: [ImageFile], identityByPath: [String: String]) -> URL? {
+        guard let selectedPath, let oldToken else { return nil }
+        guard !files.contains(where: { $0.url.standardizedFileURL.path == selectedPath }) else { return nil }
+        return files.first { identityByPath[$0.url.standardizedFileURL.path] == oldToken }?.url
+    }
+
+    private func watchCurrentFolder() {
+        guard let folder = folderURL else {
+            folderWatch.stop()
+            return
+        }
+        folderWatch.start(folder: folder) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.scheduleFolderRefresh()
+            }
+        }
+    }
+
+    private func scheduleFolderRefresh() {
+        folderRefreshTask?.cancel()
+        let folder = folderURL
+        let token = generation
+        folderRefreshTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled, let folder else { return }
+            guard self.folderURL == folder, self.generation == token else { return }
+            switch Result(catching: { try self.scanner.scan(folder: folder) }) {
+            case .failure(let error):
+                self.statusMessage = error.localizedDescription
+            case .success(let files):
+                self.applyFolderListing(files, identityByPath: FileIdentity.byPath(files))
+            }
         }
     }
 

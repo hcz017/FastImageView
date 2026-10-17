@@ -145,4 +145,37 @@ final class BrowserModelTests: XCTestCase {
         XCTAssertEqual(model.catalog.selectedFile?.filename, "b.jpg")
         XCTAssertEqual(pipeline.viewerCurrents, [files[1].url])
     }
+
+    func testRefreshRemovesDeletedFileAndFollowsRename() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, pipeline, _) = model(files: files)
+        let generation = model.beginOpen()
+        model.pendingFolderURL = URL(fileURLWithPath: "/pics")
+        model.acceptScan(generation: generation, outcome: .success(files))
+        model.setKeyword("jpg")
+        model.applyFolderListing(
+            files,
+            identityByPath: [
+                files[0].url.path: "same",
+                files[1].url.path: "other"
+            ]
+        )
+        let renamed = ImageFile(
+            url: URL(fileURLWithPath: "/pics/a-renamed.jpg"),
+            filename: "a-renamed.jpg",
+            format: .jpeg,
+            modificationDate: .distantPast,
+            iCloudState: .notCloud
+        )
+        model.applyFolderListing(
+            [renamed, files[1]],
+            identityByPath: [
+                renamed.url.path: "same",
+                files[1].url.path: "other"
+            ]
+        )
+        XCTAssertEqual(model.catalog.keyword, "jpg")
+        XCTAssertEqual(model.catalog.selectedFile?.filename, "a-renamed.jpg")
+        XCTAssertEqual(pipeline.cancelled, [files[0].url])
+    }
 }

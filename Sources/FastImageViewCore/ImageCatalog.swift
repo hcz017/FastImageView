@@ -31,6 +31,30 @@ public struct ImageCatalog: Equatable, Sendable {
         return filtered.first { $0.url == selectionID }
     }
 
+    public mutating func refresh(with files: [ImageFile], renamedSelection: URL? = nil) {
+        let previousID = selectionID
+        let previousItems = filtered
+        let previousIndex = previousID.flatMap { id in previousItems.firstIndex { $0.url == id } }
+        self.files = files
+        if let previousID, files.contains(where: { $0.url == previousID }) {
+            clampSelection()
+            return
+        }
+        if let renamedSelection, files.contains(where: { $0.url == renamedSelection }) {
+            selectionID = renamedSelection
+            clampSelection()
+            return
+        }
+        let items = filtered
+        if items.isEmpty {
+            selectionID = nil
+        } else if let previousIndex, previousIndex < items.count {
+            selectionID = items[previousIndex].url
+        } else {
+            selectionID = items[items.count - 1].url
+        }
+    }
+
     public mutating func replaceFiles(_ files: [ImageFile]) {
         self.files = files
         keyword = ""

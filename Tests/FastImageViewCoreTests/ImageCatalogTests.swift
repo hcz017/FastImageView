@@ -33,6 +33,30 @@ final class ImageCatalogTests: XCTestCase {
         XCTAssertNil(catalog.selectionID)
     }
 
+    func testRefreshKeepsFilterAndMovesSelectionAfterDeletion() {
+        var catalog = ImageCatalog()
+        let a = file("a.jpg", format: .jpeg)
+        let b = file("b.jpg", format: .jpeg)
+        let c = file("c.nef", format: .nef)
+        catalog.files = [a, b, c]
+        catalog.keyword = "jpg"
+        catalog.selectionID = a.url
+        catalog.refresh(with: [b, c])
+        XCTAssertEqual(catalog.keyword, "jpg")
+        XCTAssertEqual(catalog.filtered.map(\.filename), ["b.jpg"])
+        XCTAssertEqual(catalog.selectionID, b.url)
+    }
+
+    func testRefreshFollowsRenamedSelection() {
+        var catalog = ImageCatalog()
+        let a = file("a.jpg", format: .jpeg)
+        let renamed = file("a-renamed.jpg", format: .jpeg)
+        catalog.files = [a]
+        catalog.selectionID = a.url
+        catalog.refresh(with: [renamed], renamedSelection: renamed.url)
+        XCTAssertEqual(catalog.selectionID, renamed.url)
+    }
+
     func testRemoveSelectsNextOrPrevious() {
         var catalog = ImageCatalog()
         catalog.files = [file("a.jpg", format: .jpeg), file("b.jpg", format: .jpeg), file("c.jpg", format: .jpeg)]
