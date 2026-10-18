@@ -14,6 +14,7 @@ private final class RecordingPipeline: PreviewPipeline {
     var resetCount = 0
     var cancelled: [URL] = []
     var viewerCurrents: [URL] = []
+    var viewerPixelSizes: [Int] = []
     var thumbnailRequests: [URL] = []
     func reset() { resetCount += 1 }
     func cancel(url: URL) { cancelled.append(url) }
@@ -22,6 +23,7 @@ private final class RecordingPipeline: PreviewPipeline {
     var failedURLs: Set<URL> = []
     func showViewer(current: ImageFile, previous: ImageFile?, next: ImageFile?, maxPixelSize: Int) {
         viewerCurrents.append(current.url)
+        viewerPixelSizes.append(maxPixelSize)
     }
     func cachedThumbnail(file: ImageFile) -> CGImage? { nil }
     func cachedViewerImage(file: ImageFile) -> CGImage? { nil }
@@ -205,6 +207,29 @@ final class BrowserModelTests: XCTestCase {
 
         model.applyFolderListing(files + [file("c.jpg")], identityByPath: [:])
         XCTAssertEqual(model.listingRevision, revision + 1)
+    }
+
+    func testLeavingFitRequestsAFullSizeDecode() {
+        let files = [file("a.jpg")]
+        let (model, pipeline, _) = model(files: files)
+        let generation = model.beginOpening(folder: URL(fileURLWithPath: "/pics"), selecting: files[0].url, screenLongEdge: 1800)
+        model.acceptScan(generation: generation, outcome: .success(files))
+        XCTAssertEqual(pipeline.viewerPixelSizes, [1800])
+        model.noteViewerLayout(ViewerLayout(contentWidth: 100, contentHeight: 80, viewportWidth: 200, viewportHeight: 160, fitScale: 0.5))
+        model.zoom(by: ZoomMath.step, screenLongEdge: 1800)
+        XCTAssertEqual(pipeline.viewerPixelSizes.last, 16384)
+        XCTAssertEqual(model.zoom, .multiple(1.25))
+    }
+
+    func testDragPanClampsAndFitClearsIt() {
+        let (model, _, _) = model(files: [])
+        model.noteViewerLayout(ViewerLayout(contentWidth: 400, contentHeight: 200, viewportWidth: 300, viewportHeight: 200, fitScale: 1))
+        model.setZoomMultiple(2, screenLongEdge: 1800)
+        model.setPan(x: 1000, y: 10)
+        XCTAssertEqual(model.pan.x, 50)
+        model.setZoomMultiple(1, screenLongEdge: 1800)
+        XCTAssertEqual(model.pan, .zero)
+        XCTAssertEqual(model.zoom, .fit)
     }
 
     func testRenderGenerationFollowsPipelineChanges() {

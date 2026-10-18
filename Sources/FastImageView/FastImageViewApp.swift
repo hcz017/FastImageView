@@ -44,6 +44,16 @@ struct FastImageViewApp: App {
                 .disabled(!model.canUndo)
             }
             CommandGroup(after: .toolbar) {
+                Button("放大") {
+                    model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                }
+                .keyboardShortcut("=", modifiers: .command)
+                .disabled(model.mode != .viewer)
+                Button("缩小") {
+                    model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                }
+                .keyboardShortcut("-", modifiers: .command)
+                .disabled(model.mode != .viewer)
                 Button("适合窗口") {
                     model.setFit(.fit, screenLongEdge: screenLongEdge())
                 }
@@ -110,6 +120,9 @@ func showShortcutsHelp() {
     ↑ ↓  在网格中移动选中项
     空格  打开 / 关闭大图
     0 / 1  适合窗口 / 实际像素
+    ⌘+ / ⌘−  放大 / 缩小
+    ⌘滚轮 / 捏合  连续缩放
+    拖拽  放大后平移
     Return  打开大图
     Delete / ⌘⌫  移到废纸篓
     ⌘Z  撤销移到废纸篓

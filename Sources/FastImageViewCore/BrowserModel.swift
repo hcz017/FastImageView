@@ -34,7 +34,9 @@ public final class BrowserModel {
     public private(set) var mode: BrowserMode = .noFolder
     public private(set) var openError: String?
     public var statusMessage: String?
-    public private(set) var fit: ViewerFit = .fit
+    public private(set) var zoom: ViewerZoom = .fit
+    public private(set) var pan = ImagePan.zero
+    public private(set) var viewerLayout: ViewerLayout?
     public private(set) var screenLongEdge = 1800
     public private(set) var renderGeneration = 0
     public private(set) var generation = 0
@@ -87,6 +89,51 @@ public final class BrowserModel {
     }
 
     public var canUndo: Bool { !undoStack.isEmpty }
+
+    public var fit: ViewerFit {
+        switch zoom {
+        case .fit: return .fit
+        case .actual, .multiple: return .actual
+        }
+    }
+
+    public var prefersPan: Bool {
+        switch zoom {
+        case .fit:
+            return false
+        case .actual, .multiple:
+            guard let layout = viewerLayout else { return true }
+            return ZoomMath.prefersPan(
+                contentWidth: layout.contentWidth,
+                contentHeight: layout.contentHeight,
+                viewportWidth: layout.viewportWidth,
+                viewportHeight: layout.viewportHeight
+            )
+        }
+    }
+
+    public var zoomLabel: String {
+        switch zoom {
+        case .fit:
+            return "适合"
+        case .actual:
+            return "100%"
+        case .multiple(let value):
+            let percent = Int((ZoomMath.displayScale(fitScale: viewerLayout?.fitScale ?? 1, multiple: value) * 100).rounded())
+            return "\(percent)%"
+        }
+    }
+
+    public func zoomMultiple(fitScale: Double) -> Double {
+        switch zoom {
+        case .fit:
+            return 1
+        case .actual:
+            return ZoomMath.actualMultiple(fitScale: fitScale)
+        case .multiple(let value):
+            return value
+        }
+    }
 
     public func beginOpen() -> Int {
         generation += 1
@@ -150,7 +197,8 @@ public final class BrowserModel {
                     recentList.save(to: recentDefaults)
                 }
             }
-            fit = .fit
+            zoom = .fit
+            pan = .zero
             openError = nil
             if let wanted = pendingSelectionURL?.standardizedFileURL.path,
                let match = files.first(where: { $0.url.standardizedFileURL.path == wanted }) {
@@ -256,13 +304,15 @@ public final class BrowserModel {
         var next = catalog
         next.moveSelection(by: delta)
         catalog = next
+        pan = .zero
         if mode == .viewer { refreshViewer() }
     }
 
     public func openViewer(screenLongEdge: Int) {
         guard catalog.selectedFile != nil else { return }
         self.screenLongEdge = screenLongEdge
-        fit = .fit
+        zoom = .fit
+        pan = .zero
         mode = .viewer
         refreshViewer()
     }
@@ -274,8 +324,74 @@ public final class BrowserModel {
     public func setFit(_ fit: ViewerFit, screenLongEdge: Int) {
         guard mode == .viewer else { return }
         self.screenLongEdge = screenLongEdge
-        self.fit = fit
+        switch fit {
+        case .fit:
+            zoom = .fit
+        case .actual:
+            zoom = .actual
+        }
+        pan = .zero
         refreshViewer()
+    }
+
+    public func setZoomMultiple(_ raw: Double, screenLongEdge: Int) {
+        self.screenLongEdge = screenLongEdge
+        let previous = PreviewMaxPixel.viewer(zoom: zoom, screenLongEdge: screenLongEdge)
+        let clamped = ZoomMath.clamp(raw)
+        if ZoomMath.isFit(clamped) {
+            zoom = .fit
+            pan = .zero
+        } else {
+            zoom = .multiple(clamped)
+            reclampPan()
+        }
+        let next = PreviewMaxPixel.viewer(zoom: zoom, screenLongEdge: screenLongEdge)
+        if previous != next, mode == .viewer {
+            refreshViewer()
+        }
+    }
+
+    public func zoom(by factor: Double, screenLongEdge: Int) {
+        let current = zoomMultiple(fitScale: viewerLayout?.fitScale ?? 1)
+        setZoomMultiple(current * factor, screenLongEdge: screenLongEdge)
+    }
+
+    public func applyMagnification(_ magnification: Double, screenLongEdge: Int) {
+        let current = zoomMultiple(fitScale: viewerLayout?.fitScale ?? 1)
+        setZoomMultiple(
+            ZoomMath.applyingMagnify(multiple: current, magnification: magnification),
+            screenLongEdge: screenLongEdge
+        )
+    }
+
+    public func applyScrollZoom(_ deltaY: Double, screenLongEdge: Int) {
+        let current = zoomMultiple(fitScale: viewerLayout?.fitScale ?? 1)
+        setZoomMultiple(ZoomMath.applyingScroll(multiple: current, deltaY: deltaY), screenLongEdge: screenLongEdge)
+    }
+
+    public func noteViewerLayout(_ layout: ViewerLayout) {
+        guard layout != viewerLayout else { return }
+        viewerLayout = layout
+        reclampPan()
+    }
+
+    public func setPan(x: Double, y: Double) {
+        guard let layout = viewerLayout else {
+            pan = ImagePan(x: x, y: y)
+            return
+        }
+        pan = ImagePan.clamped(
+            x: x,
+            y: y,
+            contentWidth: layout.contentWidth,
+            contentHeight: layout.contentHeight,
+            viewportWidth: layout.viewportWidth,
+            viewportHeight: layout.viewportHeight
+        )
+    }
+
+    public func panBy(dx: Double, dy: Double) {
+        setPan(x: pan.x + dx, y: pan.y + dy)
     }
 
     public func deleteSelected() {
@@ -358,6 +474,18 @@ public final class BrowserModel {
         else if mode == .viewer { refreshViewer() }
     }
 
+    private func reclampPan() {
+        guard let layout = viewerLayout else { return }
+        pan = ImagePan.clamped(
+            x: pan.x,
+            y: pan.y,
+            contentWidth: layout.contentWidth,
+            contentHeight: layout.contentHeight,
+            viewportWidth: layout.viewportWidth,
+            viewportHeight: layout.viewportHeight
+        )
+    }
+
     private func leaveViewerIfNeeded() {
         if mode == .viewer && catalog.selectedFile == nil { mode = .grid }
     }
@@ -368,7 +496,7 @@ public final class BrowserModel {
         let index = items.firstIndex(where: { $0.url == current.url })
         let previous = index.flatMap { $0 > 0 ? items[$0 - 1] : nil }
         let next = index.flatMap { $0 + 1 < items.count ? items[$0 + 1] : nil }
-        let pixels = PreviewMaxPixel.viewer(fit: fit, screenLongEdge: screenLongEdge, isRaw: current.format.isRaw)
+        let pixels = PreviewMaxPixel.viewer(zoom: zoom, screenLongEdge: screenLongEdge)
         previews.showViewer(current: current, previous: previous, next: next, maxPixelSize: pixels)
     }
 }

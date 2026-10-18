@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var hoveredURL: URL?
     @State private var viewerHovered = false
     @State private var retainedViewerImage: CGImage?
+    @State private var panOrigin: ImagePan?
     @StateObject private var toasts = ToastModel()
 
     var body: some View {
@@ -110,8 +111,11 @@ struct ContentView: View {
 
     private func viewerSubtitle(_ file: ImageFile) -> String {
         var text = viewerIndexText(file)
-        if model.fit == .actual, let image = model.cachedViewerImage(file) {
-            text += " · \(image.width)×\(image.height)"
+        if model.zoom != .fit {
+            text += " · \(model.zoomLabel)"
+            if let image = model.cachedViewerImage(file) ?? retainedViewerImage {
+                text += " · \(image.width)×\(image.height)"
+            }
         }
         return text
     }
@@ -148,13 +152,34 @@ struct ContentView: View {
     @ViewBuilder
     private var viewerToolbarItems: some View {
         if model.mode == .viewer, model.catalog.selectedFile != nil {
-            Picker("显示方式", selection: fitMode) {
-                Text("适合窗口").tag(ViewerFit.fit)
-                Text("实际像素").tag(ViewerFit.actual)
+            Button {
+                model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+            } label: {
+                Image(systemName: "minus.magnifyingglass")
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 180)
+            .help("缩小 (⌘−)")
+            .accessibilityLabel("缩小")
+            Text(model.zoomLabel)
+                .font(.caption.monospacedDigit())
+                .frame(minWidth: 44)
+                .accessibilityLabel("缩放 \(model.zoomLabel)")
+            Button {
+                model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+            } label: {
+                Image(systemName: "plus.magnifyingglass")
+            }
+            .help("放大 (⌘+)")
+            .accessibilityLabel("放大")
+            Button("适合窗口") {
+                model.setFit(.fit, screenLongEdge: screenLongEdge())
+            }
+            .fontWeight(model.zoom == .fit ? .semibold : .regular)
+            .help("适合窗口 (0)")
+            Button("实际像素") {
+                model.setFit(.actual, screenLongEdge: screenLongEdge())
+            }
+            .fontWeight(model.zoom == .actual ? .semibold : .regular)
+            .help("实际像素 (1)")
             trashButton
         }
     }
@@ -497,6 +522,7 @@ struct ContentView: View {
             }
             .onHover { viewerHovered = $0 }
             .onChange(of: file.url) { _, _ in
+                panOrigin = nil
                 if let image = model.cachedViewerImage(file) {
                     retainedViewerImage = image
                 }
@@ -545,13 +571,6 @@ struct ContentView: View {
         return "\(index + 1)/\(model.catalog.filtered.count)"
     }
 
-    private var fitMode: Binding<ViewerFit> {
-        Binding(
-            get: { model.fit },
-            set: { model.setFit($0, screenLongEdge: screenLongEdge()) }
-        )
-    }
-
     @ViewBuilder
     private func viewerContent(_ file: ImageFile) -> some View {
         if file.iCloudState == .notDownloaded {
@@ -560,25 +579,11 @@ struct ContentView: View {
             StatePlaceholder(icon: "exclamationmark.triangle", message: "无法打开")
                 .onAppear { model.noteUnavailable(file.url) }
         } else if let image = model.cachedViewerImage(file) {
-            Group {
-                if model.fit == .actual {
-                    ScrollView([.horizontal, .vertical]) {
-                        Image(decorative: image, scale: 1)
-                            .onTapGesture(count: 2) { toggleFit() }
-                    }
-                } else {
-                    Image(decorative: image, scale: 1).resizable().scaledToFit()
-                        .padding(theme.spacingLG)
-                        .onTapGesture(count: 2) { toggleFit() }
-                }
-            }
-            .onAppear { retainedViewerImage = image }
+            zoomableImage(image, dimmed: false)
+                .onAppear { retainedViewerImage = image }
         } else if let retained = retainedViewerImage {
             ZStack {
-                Image(decorative: retained, scale: 1)
-                    .resizable()
-                    .scaledToFit()
-                    .opacity(0.55)
+                zoomableImage(retained, dimmed: true)
                 ProgressView()
                     .controlSize(.small)
                     .padding(theme.spacingSM)
@@ -588,6 +593,77 @@ struct ContentView: View {
         } else {
             StatePlaceholder(icon: "photo", message: "加载中…")
         }
+    }
+
+    private func zoomableImage(_ image: CGImage, dimmed: Bool) -> some View {
+        zoomCanvas(imageWidth: Double(image.width), imageHeight: Double(image.height)) { metrics in
+            placedImage(image, metrics: metrics, dimmed: dimmed)
+        }
+    }
+
+    private func zoomCanvas<Content: View>(imageWidth: Double, imageHeight: Double, @ViewBuilder content: @escaping (CGSize) -> Content) -> some View {
+        GeometryReader { geo in
+            let metrics = viewerMetrics(imageWidth: imageWidth, imageHeight: imageHeight, viewport: geo.size)
+            content(metrics.content)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .contentShape(Rectangle())
+                .gesture(viewerDrag)
+                .onTapGesture(count: 2) { toggleFit() }
+                .onAppear { publishViewerLayout(metrics, viewport: geo.size) }
+                .onChange(of: geo.size) { _, size in
+                    publishViewerLayout(viewerMetrics(imageWidth: imageWidth, imageHeight: imageHeight, viewport: size), viewport: size)
+                }
+                .onChange(of: model.zoom) { _, _ in
+                    publishViewerLayout(viewerMetrics(imageWidth: imageWidth, imageHeight: imageHeight, viewport: geo.size), viewport: geo.size)
+                }
+        }
+    }
+
+    private func placedImage(_ image: CGImage, metrics: CGSize, dimmed: Bool) -> some View {
+        Image(decorative: image, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: metrics.width, height: metrics.height)
+            .opacity(dimmed ? 0.55 : 1)
+            .offset(x: model.pan.x, y: model.pan.y)
+    }
+
+    private var viewerDrag: some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                if panOrigin == nil { panOrigin = model.pan }
+                let origin = panOrigin ?? .zero
+                model.setPan(x: origin.x + Double(value.translation.width), y: origin.y + Double(value.translation.height))
+            }
+            .onEnded { _ in
+                panOrigin = nil
+            }
+    }
+
+    private func viewerMetrics(imageWidth: Double, imageHeight: Double, viewport: CGSize) -> (fitScale: Double, content: CGSize) {
+        let pad = Double(theme.spacingLG)
+        let fitW = max(Double(viewport.width) - pad * 2, 1)
+        let fitH = max(Double(viewport.height) - pad * 2, 1)
+        let fitScale = ZoomMath.fitScale(
+            imageWidth: imageWidth,
+            imageHeight: imageHeight,
+            viewportWidth: fitW,
+            viewportHeight: fitH
+        )
+        let display = ZoomMath.displayScale(fitScale: fitScale, multiple: model.zoomMultiple(fitScale: fitScale))
+        return (fitScale, CGSize(width: imageWidth * display, height: imageHeight * display))
+    }
+
+    private func publishViewerLayout(_ metrics: (fitScale: Double, content: CGSize), viewport: CGSize) {
+        model.noteViewerLayout(
+            ViewerLayout(
+                contentWidth: Double(metrics.content.width),
+                contentHeight: Double(metrics.content.height),
+                viewportWidth: Double(viewport.width),
+                viewportHeight: Double(viewport.height),
+                fitScale: metrics.fitScale
+            )
+        )
     }
 
     @ViewBuilder
@@ -901,15 +977,32 @@ private struct EventMonitor: NSViewRepresentable {
             case .actualPixels:
                 model.setFit(.actual, screenLongEdge: screenLongEdge())
                 return nil
+            case .zoomIn:
+                model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                return nil
+            case .zoomOut:
+                model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                return nil
             case .openFolder:
                 return event
             }
         }
 
+        func handleMagnify(_ event: NSEvent) -> NSEvent? {
+            guard let model, model.mode == .viewer else { return event }
+            model.applyMagnification(event.magnification, screenLongEdge: screenLongEdge())
+            return nil
+        }
+
         func handleScrollWheel(_ event: NSEvent) -> NSEvent? {
             guard let model, let scroll, model.mode == .viewer else { return event }
-            if model.fit == .actual {
-                return event
+            if event.modifierFlags.contains(.command) {
+                model.applyScrollZoom(event.scrollingDeltaY, screenLongEdge: screenLongEdge())
+                return nil
+            }
+            if model.prefersPan {
+                model.panBy(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY)
+                return nil
             }
             let raw = specDeltas(
                 scrollingDeltaX: event.scrollingDeltaX,
@@ -937,6 +1030,7 @@ private final class MonitorHostView: NSView {
     weak var coordinator: EventMonitor.Coordinator?
     private var keyMonitor: Any?
     private var scrollMonitor: Any?
+    private var magnifyMonitor: Any?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -963,6 +1057,11 @@ private final class MonitorHostView: NSView {
                 coordinator.handleScrollWheel(event)
             }
         }
+        magnifyMonitor = NSEvent.addLocalMonitorForEvents(matching: .magnify) { event in
+            MainActor.assumeIsolated {
+                coordinator.handleMagnify(event)
+            }
+        }
     }
 
     private func removeMonitors() {
@@ -973,6 +1072,10 @@ private final class MonitorHostView: NSView {
         if let scrollMonitor {
             NSEvent.removeMonitor(scrollMonitor)
             self.scrollMonitor = nil
+        }
+        if let magnifyMonitor {
+            NSEvent.removeMonitor(magnifyMonitor)
+            self.magnifyMonitor = nil
         }
     }
 }

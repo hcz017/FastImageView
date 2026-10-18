@@ -11,10 +11,14 @@ public enum PreviewMaxPixel {
 
     public static func viewer(fit: ViewerFit, screenLongEdge: Int, isRaw: Bool) -> Int {
         let _ = isRaw
-        switch fit {
+        return viewer(zoom: fit == .fit ? .fit : .actual, screenLongEdge: screenLongEdge)
+    }
+
+    public static func viewer(zoom: ViewerZoom, screenLongEdge: Int) -> Int {
+        switch zoom {
         case .fit:
             return screenLongEdge
-        case .actual:
+        case .actual, .multiple:
             return rawActualCap
         }
     }
