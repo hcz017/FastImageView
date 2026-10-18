@@ -48,11 +48,11 @@ struct ContentView: View {
                     Button {
                         model.closeViewer()
                     } label: {
-                        Label("网格", systemImage: "chevron.backward")
+                        Label("返回", systemImage: "chevron.backward")
                     }
-                    .labelStyle(.titleAndIcon)
-                    .help("返回网格 (Esc)")
-                    .accessibilityLabel("返回网格")
+                    .labelStyle(.iconOnly)
+                    .help("返回 (Esc)")
+                    .accessibilityLabel("返回")
                 } else {
                     Button {
                         chooseFolder(model)
