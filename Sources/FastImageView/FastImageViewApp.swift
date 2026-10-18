@@ -129,7 +129,7 @@ func showShortcutsHelp() {
     alert.informativeText = """
     ⌘O  打开文件夹
     ← →  上一张 / 下一张
-    ↑ ↓  在网格中移动选中项
+    ↑ ↓  在网格中按行移动
     空格  打开 / 关闭大图
     0 / 1  适合窗口 / 实际像素
     ⌘+ / ⌘−  放大 / 缩小

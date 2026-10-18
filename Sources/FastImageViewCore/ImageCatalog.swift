@@ -170,6 +170,14 @@ public struct ImageCatalog: Equatable, Sendable {
         selectOnly(items[next].url)
     }
 
+    public mutating func moveSelection(byRows rows: Int, columns: Int) {
+        let items = filtered
+        guard let selectionID, let index = items.firstIndex(where: { $0.url == selectionID }) else { return }
+        let next = GridLayout.rowIndex(from: index, count: items.count, columns: columns, deltaRows: rows)
+        guard next != index else { return }
+        selectOnly(items[next].url)
+    }
+
     private mutating func selectOnly(_ url: URL) {
         selectionID = url
         selectionIDs = [url]

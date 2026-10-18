@@ -20,8 +20,10 @@ final class KeyRoutingTests: XCTestCase {
         XCTAssertEqual(interpretKey(key(6, command: true, chars: "z"), focus: .browser, mode: .grid), .undoTrash)
         XCTAssertEqual(interpretKey(key(124), focus: .browser, mode: .grid), .move(1))
         XCTAssertEqual(interpretKey(key(123), focus: .browser, mode: .viewer), .move(-1))
-        XCTAssertEqual(interpretKey(key(125), focus: .browser, mode: .grid), .move(1))
-        XCTAssertEqual(interpretKey(key(126), focus: .browser, mode: .grid), .move(-1))
+        XCTAssertEqual(interpretKey(key(125), focus: .browser, mode: .grid), .moveRow(1))
+        XCTAssertEqual(interpretKey(key(126), focus: .browser, mode: .grid), .moveRow(-1))
+        XCTAssertEqual(interpretKey(key(125), focus: .browser, mode: .viewer), .move(1))
+        XCTAssertEqual(interpretKey(key(126), focus: .browser, mode: .viewer), .move(-1))
     }
 
     func testViewerFitAndEscapeDoNotApplyInGrid() {

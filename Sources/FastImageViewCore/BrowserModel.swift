@@ -344,6 +344,15 @@ public final class BrowserModel {
         if mode == .viewer { refreshViewer() }
     }
 
+    public func moveSelection(byRows rows: Int, columns: Int, screenLongEdge: Int) {
+        self.screenLongEdge = screenLongEdge
+        var next = catalog
+        next.moveSelection(byRows: rows, columns: max(columns, 1))
+        catalog = next
+        pan = .zero
+        if mode == .viewer { refreshViewer() }
+    }
+
     public func openViewer(screenLongEdge: Int) {
         guard catalog.selectedFile != nil else { return }
         self.screenLongEdge = screenLongEdge

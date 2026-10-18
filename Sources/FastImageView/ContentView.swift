@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var retainedViewerImage: CGImage?
     @State private var dropTargeted = false
     @State private var panOrigin: ImagePan?
+    @State private var gridColumns = 1
     @StateObject private var toasts = ToastModel()
 
     var body: some View {
@@ -114,7 +115,8 @@ struct ContentView: View {
             EventMonitor(
                 scroll: $scroll,
                 model: model,
-                toasts: toasts
+                toasts: toasts,
+                gridColumns: gridColumns
             )
         }
         .alert("无法完成操作", isPresented: errorPresented) {
@@ -410,18 +412,32 @@ struct ContentView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: theme.gridSpacing) {
-                            ForEach(model.catalog.filtered) { file in
-                                cell(file).id(file.url)
+                GeometryReader { geo in
+                    let columnCount = GridLayout.columnCount(
+                        availableWidth: max(0, Double(geo.size.width) - Double(theme.spacingLG) * 2),
+                        minimum: Double(theme.tileMinWidth),
+                        maximum: Double(theme.tileMaxWidth),
+                        spacing: Double(theme.gridSpacing)
+                    )
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVGrid(columns: columns, spacing: theme.gridSpacing) {
+                                ForEach(model.catalog.filtered) { file in
+                                    cell(file).id(file.url)
+                                }
                             }
+                            .padding(theme.spacingLG)
                         }
-                        .padding(theme.spacingLG)
-                    }
-                    .onAppear { revealSelection(using: proxy) }
-                    .onChange(of: model.catalog.selectionID) { _, _ in
-                        revealSelection(using: proxy)
+                        .onAppear {
+                            gridColumns = columnCount
+                            revealSelection(using: proxy)
+                        }
+                        .onChange(of: columnCount) { _, count in
+                            gridColumns = count
+                        }
+                        .onChange(of: model.catalog.selectionID) { _, _ in
+                            revealSelection(using: proxy)
+                        }
                     }
                 }
             }
@@ -1002,6 +1018,7 @@ private struct EventMonitor: NSViewRepresentable {
     @Binding var scroll: ScrollAccumulator
     var model: BrowserModel
     var toasts: ToastModel
+    var gridColumns: Int
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -1017,6 +1034,7 @@ private struct EventMonitor: NSViewRepresentable {
         context.coordinator.scroll = $scroll
         context.coordinator.model = model
         context.coordinator.toasts = toasts
+        context.coordinator.gridColumns = gridColumns
         nsView.coordinator = context.coordinator
     }
 
@@ -1025,6 +1043,7 @@ private struct EventMonitor: NSViewRepresentable {
         var scroll: Binding<ScrollAccumulator>?
         var model: BrowserModel?
         var toasts: ToastModel?
+        var gridColumns = 1
 
         func handleKeyDown(_ event: NSEvent) -> NSEvent? {
             guard let model else { return event }
@@ -1057,6 +1076,9 @@ private struct EventMonitor: NSViewRepresentable {
                 return nil
             case .move(let delta):
                 model.moveSelection(by: delta, screenLongEdge: screenLongEdge())
+                return nil
+            case .moveRow(let rows):
+                model.moveSelection(byRows: rows, columns: gridColumns, screenLongEdge: screenLongEdge())
                 return nil
             case .openViewer:
                 NSApp.keyWindow?.makeFirstResponder(nil)
