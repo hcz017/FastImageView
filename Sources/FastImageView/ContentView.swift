@@ -6,7 +6,6 @@ import FastImageViewCore
 struct ContentView: View {
     @Environment(\.appTheme) private var theme
     @Bindable var model: BrowserModel
-    @FocusState private var keywordFocused: Bool
     @State private var scroll = ScrollAccumulator()
     @State private var hoveredURL: URL?
     @State private var viewerHovered = false
@@ -24,6 +23,7 @@ struct ContentView: View {
                 }
             case .grid:
                 grid
+                    .searchable(text: keyword, placement: .toolbar, prompt: "搜索文件名")
             case .viewer:
                 if let file = model.catalog.selectedFile {
                     viewer(file)
@@ -32,6 +32,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 720, minHeight: 480)
         .navigationTitle(windowTitle)
+        .navigationSubtitle(toolbarSubtitle)
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
                 if model.mode == .viewer {
@@ -40,7 +41,7 @@ struct ContentView: View {
                     } label: {
                         Label("网格", systemImage: "chevron.backward")
                     }
-                    .labelStyle(.iconOnly)
+                    .labelStyle(.titleAndIcon)
                     .help("返回网格 (Esc)")
                     .accessibilityLabel("返回网格")
                 } else {
@@ -49,7 +50,7 @@ struct ContentView: View {
                     } label: {
                         Label("打开", systemImage: "folder")
                     }
-                    .labelStyle(.iconOnly)
+                    .labelStyle(.titleAndIcon)
                     .help("打开文件夹 (⌘O)")
                 }
             }
@@ -74,13 +75,11 @@ struct ContentView: View {
         }
         .onChange(of: model.mode) { _, mode in
             if mode != .grid {
-                keywordFocused = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
             }
         }
         .background {
             EventMonitor(
-                keywordFocused: $keywordFocused,
                 scroll: $scroll,
                 model: model,
                 toasts: toasts
@@ -95,6 +94,26 @@ struct ContentView: View {
 
     private var errorPresented: Binding<Bool> {
         Binding(get: { model.statusMessage != nil }, set: { if !$0 { model.statusMessage = nil } })
+    }
+
+    private var toolbarSubtitle: String {
+        switch model.mode {
+        case .grid:
+            return model.folderURL == nil ? "" : folderCountText
+        case .viewer:
+            guard let file = model.catalog.selectedFile else { return "" }
+            return viewerSubtitle(file)
+        case .noFolder:
+            return ""
+        }
+    }
+
+    private func viewerSubtitle(_ file: ImageFile) -> String {
+        var text = viewerIndexText(file)
+        if model.fit == .actual, let image = model.cachedViewerImage(file) {
+            text += " · \(image.width)×\(image.height)"
+        }
+        return text
     }
 
     private var windowTitle: String {
@@ -113,12 +132,7 @@ struct ContentView: View {
     @ViewBuilder
     private var gridToolbarItems: some View {
         if model.mode == .grid {
-            searchField
             formatMenu
-            Text(folderCountText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize()
             if model.isScanning {
                 ProgressView()
                     .controlSize(.small)
@@ -133,18 +147,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private var viewerToolbarItems: some View {
-        if model.mode == .viewer, let file = model.catalog.selectedFile {
-            Text(viewerIndexText(file))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            if model.fit == .actual, let image = model.cachedViewerImage(file) {
-                Text("\(image.width)×\(image.height)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .help(file.format.isRaw ? "原片显示的是内嵌预览尺寸" : "图片像素尺寸")
-            }
+        if model.mode == .viewer, model.catalog.selectedFile != nil {
             Picker("显示方式", selection: fitMode) {
                 Text("适合窗口").tag(ViewerFit.fit)
                 Text("实际像素").tag(ViewerFit.actual)
@@ -261,36 +264,6 @@ struct ContentView: View {
     }
 
     // MARK: - 筛选栏
-
-    private var searchField: some View {
-        HStack(spacing: theme.spacingXS) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("搜索文件名", text: keyword)
-                .textFieldStyle(.plain)
-                .focused($keywordFocused)
-            if !model.catalog.keyword.isEmpty {
-                Button {
-                    model.setKeyword("")
-                    keywordFocused = true
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .help("清除搜索")
-                .accessibilityLabel("清除搜索")
-            }
-        }
-        .padding(.horizontal, theme.spacingSM)
-        .padding(.vertical, theme.spacingXS)
-        .background(theme.searchFieldFill, in: RoundedRectangle(cornerRadius: theme.radiusSmall))
-        .overlay {
-            RoundedRectangle(cornerRadius: theme.radiusSmall)
-                .strokeBorder(keywordFocused ? theme.focusStroke : .clear, lineWidth: 2)
-        }
-        .frame(width: 220)
-    }
 
     private var formatMenu: some View {
         Menu {
@@ -455,13 +428,12 @@ struct ContentView: View {
     }
 
     private func resignSearchFocus() {
-        keywordFocused = false
         NSApp.keyWindow?.makeFirstResponder(nil)
     }
 
     private func makeContextMenu(for file: ImageFile) -> NSMenu {
         model.select(url: file.url)
-        keywordFocused = false
+        resignSearchFocus()
         let model = self.model
         let toasts = self.toasts
         let target = ContextMenuTarget()
@@ -857,7 +829,6 @@ private final class ContextMenuTarget: NSObject {
 }
 
 private struct EventMonitor: NSViewRepresentable {
-    @FocusState.Binding var keywordFocused: Bool
     @Binding var scroll: ScrollAccumulator
     var model: BrowserModel
     var toasts: ToastModel
@@ -873,7 +844,6 @@ private struct EventMonitor: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: MonitorHostView, context: Context) {
-        context.coordinator.keywordFocused = $keywordFocused
         context.coordinator.scroll = $scroll
         context.coordinator.model = model
         context.coordinator.toasts = toasts
@@ -882,26 +852,23 @@ private struct EventMonitor: NSViewRepresentable {
 
     @MainActor
     final class Coordinator {
-        var keywordFocused: FocusState<Bool>.Binding?
         var scroll: Binding<ScrollAccumulator>?
         var model: BrowserModel?
         var toasts: ToastModel?
 
         func handleKeyDown(_ event: NSEvent) -> NSEvent? {
-            guard let model, let keywordFocused else { return event }
+            guard let model else { return event }
             let chord = KeyChord(
                 keyCode: event.keyCode,
                 command: event.modifierFlags.contains(.command),
                 charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? ""
             )
-            let editingText = keywordFocused.wrappedValue
-                || NSApp.keyWindow?.firstResponder is NSTextView
+            let editingText = NSApp.keyWindow?.firstResponder is NSTextView
             let focus: KeyFocus = editingText ? .keyword : .browser
             switch interpretKey(chord, focus: focus, mode: model.mode) {
             case .passThrough:
                 return event
             case .resignKeywordFocus:
-                keywordFocused.wrappedValue = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 return nil
             case .deletePhoto:
@@ -922,7 +889,6 @@ private struct EventMonitor: NSViewRepresentable {
                 model.moveSelection(by: delta, screenLongEdge: screenLongEdge())
                 return nil
             case .openViewer:
-                keywordFocused.wrappedValue = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 model.openViewer(screenLongEdge: screenLongEdge())
                 return nil

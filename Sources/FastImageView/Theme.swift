@@ -24,11 +24,9 @@ struct AppTheme {
     // MARK: 颜色
     let thumbnailPlaceholder = Color.gray.opacity(0.15)
     let recentRowFill = Color.gray.opacity(0.08)
-    let searchFieldFill = Color.gray.opacity(0.12)
     let selectionFill = Color.accentColor.opacity(0.18)
     let selectionStroke = Color.accentColor
     let selectionStrokeWidth: CGFloat = 2
-    let focusStroke = Color.accentColor.opacity(0.65)
     let hoverStroke = Color.primary.opacity(0.18)
     let viewerCanvas = Color(nsColor: .underPageBackgroundColor)
 
