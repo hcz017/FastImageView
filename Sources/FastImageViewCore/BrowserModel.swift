@@ -87,7 +87,7 @@ public final class BrowserModel {
         return BrowserModel(
             scanner: FolderScanner(),
             deletion: DeletionService(storage: FileManagerTrashStorage()),
-            previews: LivePreviewPipeline(),
+            previews: LivePreviewPipeline(diskThumbnails: ThumbnailDiskStore.live()),
             recentFolders: RecentFolderList(defaults: defaults),
             recentDefaults: defaults,
             folderWatch: DispatchFolderWatch()

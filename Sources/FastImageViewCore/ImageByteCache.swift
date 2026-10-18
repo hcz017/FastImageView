@@ -3,6 +3,7 @@ import Foundation
 
 public enum CacheBudget {
     public static let thumbnailBytes = 128 * 1024 * 1024
+    public static let thumbnailDiskBytes = 512 * 1024 * 1024
     public static let viewerBytes = 512 * 1024 * 1024
     public static func cost(width: Int, height: Int) -> Int { width * height * 4 }
 }

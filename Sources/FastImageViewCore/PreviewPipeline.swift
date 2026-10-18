@@ -57,6 +57,7 @@ public final class LivePreviewPipeline: PreviewPipeline {
     private var scheduler = PreviewScheduler()
     private let thumbnails = ImageByteCache(byteLimit: CacheBudget.thumbnailBytes)
     private let viewers = ImageByteCache(byteLimit: CacheBudget.viewerBytes)
+    private let diskThumbnails: ThumbnailDiskStore?
     private let decoder = ImageIOThumbnailDecoder()
     private var running = 0
     private var decodeEpoch = 0
@@ -67,7 +68,9 @@ public final class LivePreviewPipeline: PreviewPipeline {
     private var wantedViewerURLs = Set<URL>()
     private var decodingThumbnails = Set<URL>()
 
-    public init() {}
+    public init(diskThumbnails: ThumbnailDiskStore? = nil) {
+        self.diskThumbnails = diskThumbnails
+    }
 
     public func reset() {
         scheduler = PreviewScheduler()
@@ -86,6 +89,7 @@ public final class LivePreviewPipeline: PreviewPipeline {
         scheduler.cancel(url: url)
         thumbnails.remove(url: url)
         viewers.remove(url: url)
+        diskThumbnails?.remove(path: url.path)
         viewerPixels.removeValue(forKey: url)
         failures.remove(url)
         if let ids = queuedIDsByURL.removeValue(forKey: url) {
@@ -186,9 +190,23 @@ public final class LivePreviewPipeline: PreviewPipeline {
             untrackQueued(id: job.id, url: job.url)
             let priority = job.priority
             let epoch = decodeEpoch
+            let disk = diskThumbnails
+            let path = job.url.path
             if priority == .thumbnail { decodingThumbnails.insert(job.url) }
             Task.detached { [decoder] in
-                let image = decoder.thumbnail(url: job.url, maxPixelSize: job.maxPixelSize)
+                let image: CGImage?
+                var loadedFromDisk = false
+                if priority == .thumbnail,
+                   let disk,
+                   let cached = disk.image(path: path, maxPixelSize: job.maxPixelSize, modified: modified) {
+                    image = cached
+                    loadedFromDisk = true
+                } else {
+                    image = decoder.thumbnail(url: job.url, maxPixelSize: job.maxPixelSize)
+                }
+                if priority == .thumbnail, let image, !loadedFromDisk, FileManager.default.fileExists(atPath: path) {
+                    disk?.store(path: path, maxPixelSize: job.maxPixelSize, modified: modified, image: image)
+                }
                 await MainActor.run {
                     self.running -= 1
                     if priority == .thumbnail { self.decodingThumbnails.remove(job.url) }
