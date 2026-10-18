@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var panOrigin: ImagePan?
     @State private var gridColumns = 1
     @State private var pendingSearchFocus = false
+    @State private var captureSummary = ""
     @State private var gifStarted = Date()
     @StateObject private var gifClip = GIFClip()
     @StateObject private var toasts = ToastModel()
@@ -611,6 +612,11 @@ struct ContentView: View {
         } else {
             gifClip.clear()
         }
+        let summary = await Task.detached(priority: .utility) {
+            CaptureInfoReader.load(url: url).summary
+        }.value
+        guard file.url == url else { return }
+        captureSummary = summary
     }
 
     private func focusSearch() {
@@ -668,12 +674,29 @@ struct ContentView: View {
             .overlay(alignment: .trailing) {
                 viewerNavButton(previous: false, file: file)
             }
+            .overlay(alignment: .topLeading) {
+                if !captureSummary.isEmpty {
+                    Text(captureSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .padding(.horizontal, theme.spacingMD)
+                        .padding(.vertical, theme.spacingSM)
+                        .frame(maxWidth: 560, alignment: .leading)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: theme.radiusSmall))
+                        .padding(theme.spacingLG)
+                        .allowsHitTesting(false)
+                        .accessibilityLabel("拍摄信息")
+                }
+            }
             .onHover { viewerHovered = $0 }
             .task(id: file.url) {
                 await loadViewerDetails(file)
             }
             .onChange(of: file.url) { _, _ in
                 panOrigin = nil
+                captureSummary = ""
                 gifStarted = Date()
                 if let image = model.cachedViewerImage(file) {
                     retainedViewerImage = image
