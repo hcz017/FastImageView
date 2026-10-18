@@ -18,17 +18,13 @@ echo "==> 组装 $APP_NAME.app"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 cp ".build/release/$APP_NAME" "$BUNDLE/Contents/MacOS/$APP_NAME"
 
-if [ ! -f "$BUNDLE/Contents/Info.plist" ]; then
-    /usr/libexec/PlistBuddy -c "Add :CFBundleDevelopmentRegion string en" "$BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $APP_NAME" "$BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string local.$APP_NAME" "$BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleName string $APP_NAME" "$BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0" "$BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 14.0" "$BUNDLE/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$BUNDLE/Contents/Info.plist"
+# Always take Support/Info.plist so CFBundleDocumentTypes stay registered for Finder “Open With”.
+PLIST_SRC="$ROOT/Support/Info.plist"
+if [ ! -f "$PLIST_SRC" ]; then
+    echo "缺少 $PLIST_SRC" >&2
+    exit 1
 fi
+cp "$PLIST_SRC" "$BUNDLE/Contents/Info.plist"
 
 if [ -f "$ICON" ]; then
     cp "$ICON" "$BUNDLE/Contents/Resources/AppIcon.icns"

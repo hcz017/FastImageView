@@ -1,0 +1,15 @@
+---
+description: After finishing a user change request, create a git commit by default
+alwaysApply: true
+---
+
+# Default commit after a finished change
+
+When a user request to change the product or tooling is **done** (implemented, verified as needed):
+
+1. Create **one git commit** for that request without waiting to be asked.
+2. Follow the repo commit protocol: status, diff, log; stage only relevant files; concise message focusing on why; never commit secrets, `.env`, built `FastImageView.app/`, or unrelated untracked clutter unless the user asked for those files.
+3. Do **not** push unless the user asks.
+4. Skip the automatic commit only if the user said not to commit, the work is explicitly incomplete/WIP, or there is nothing to commit.
+
+This overrides the older habit of waiting for an explicit “提交” after each completed change.
