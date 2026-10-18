@@ -33,22 +33,20 @@ public struct CaptureInfo: Equatable, Sendable {
 
     public var lines: [String] {
         var rows: [String] = []
-        if let capturedAt, !capturedAt.isEmpty {
-            rows.append(capturedAt)
-        }
-        let gear = [camera, lens]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-        if !gear.isEmpty {
-            rows.append(gear.joined(separator: " · "))
-        }
-        let exposure = [aperture, shutter, iso, focalLength, pixelSize]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-        if !exposure.isEmpty {
-            rows.append(exposure.joined(separator: " · "))
-        }
+        appendLabeled(&rows, name: "拍摄时间", value: capturedAt)
+        appendLabeled(&rows, name: "相机", value: camera)
+        appendLabeled(&rows, name: "镜头", value: lens)
+        appendLabeled(&rows, name: "光圈", value: aperture)
+        appendLabeled(&rows, name: "快门", value: shutter)
+        appendLabeled(&rows, name: "ISO", value: iso)
+        appendLabeled(&rows, name: "焦距", value: focalLength)
+        appendLabeled(&rows, name: "尺寸", value: pixelSize)
         return rows
+    }
+
+    private func appendLabeled(_ rows: inout [String], name: String, value: String?) {
+        guard let value, !value.isEmpty else { return }
+        rows.append("\(name)：\(value)")
     }
 
     public var summary: String {
@@ -108,7 +106,7 @@ public enum CaptureInfoFormatter {
 
     public static func iso(_ value: Int) -> String? {
         guard value > 0 else { return nil }
-        return "ISO \(value)"
+        return "\(value)"
     }
 
     public static func focalLength(_ millimeters: Double) -> String? {

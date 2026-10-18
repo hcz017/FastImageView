@@ -16,7 +16,7 @@ struct ContentView: View {
     @State private var gridColumns = 1
     @State private var pendingSearchFocus = false
     @State private var captureSummary = ""
-    @State private var showCaptureInfo = true
+    @State private var showCaptureInfo = false
     @State private var gifStarted = Date()
     @StateObject private var gifClip = GIFClip()
     @StateObject private var toasts = ToastModel()

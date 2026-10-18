@@ -13,7 +13,7 @@ final class CaptureInfoTests: XCTestCase {
         XCTAssertEqual(CaptureInfoFormatter.aperture(8), "f/8")
         XCTAssertEqual(CaptureInfoFormatter.shutter(1.0 / 120.0), "1/120")
         XCTAssertEqual(CaptureInfoFormatter.shutter(2), "2s")
-        XCTAssertEqual(CaptureInfoFormatter.iso(100), "ISO 100")
+        XCTAssertEqual(CaptureInfoFormatter.iso(100), "100")
         XCTAssertEqual(CaptureInfoFormatter.focalLength(24), "24mm")
         XCTAssertEqual(CaptureInfoFormatter.pixelSize(width: 4032, height: 3024), "4032×3024")
     }
@@ -40,17 +40,27 @@ final class CaptureInfoTests: XCTestCase {
         XCTAssertEqual(
             info.lines,
             [
-                "2026-10-18 15:04",
-                "Apple iPhone 15 Pro · iPhone 15 Pro back camera",
-                "f/1.8 · 1/125 · ISO 80 · 6.9mm · 4032×3024"
+                "拍摄时间：2026-10-18 15:04",
+                "相机：Apple iPhone 15 Pro",
+                "镜头：iPhone 15 Pro back camera",
+                "光圈：f/1.8",
+                "快门：1/125",
+                "ISO：80",
+                "焦距：6.9mm",
+                "尺寸：4032×3024"
             ]
         )
         XCTAssertEqual(
             info.summary,
             """
-            2026-10-18 15:04
-            Apple iPhone 15 Pro · iPhone 15 Pro back camera
-            f/1.8 · 1/125 · ISO 80 · 6.9mm · 4032×3024
+            拍摄时间：2026-10-18 15:04
+            相机：Apple iPhone 15 Pro
+            镜头：iPhone 15 Pro back camera
+            光圈：f/1.8
+            快门：1/125
+            ISO：80
+            焦距：6.9mm
+            尺寸：4032×3024
             """
         )
     }
@@ -60,7 +70,7 @@ final class CaptureInfoTests: XCTestCase {
             kCGImagePropertyPixelWidth: 800,
             kCGImagePropertyPixelHeight: 600
         ])
-        XCTAssertEqual(info.lines, ["800×600"])
-        XCTAssertEqual(info.summary, "800×600")
+        XCTAssertEqual(info.lines, ["尺寸：800×600"])
+        XCTAssertEqual(info.summary, "尺寸：800×600")
     }
 }
