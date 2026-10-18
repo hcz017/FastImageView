@@ -22,18 +22,42 @@ struct ContentView: View {
                 } else {
                     empty
                 }
-            case .grid, .viewer:
-                if model.mode == .grid {
-                    filterBar
-                    Divider()
-                    grid
-                } else if let file = model.catalog.selectedFile {
+            case .grid:
+                grid
+            case .viewer:
+                if let file = model.catalog.selectedFile {
                     viewer(file)
                 }
             }
         }
         .frame(minWidth: 720, minHeight: 480)
-        .navigationTitle(model.folderURL?.lastPathComponent ?? "FastImageView")
+        .navigationTitle(windowTitle)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                if model.mode == .viewer {
+                    Button {
+                        model.closeViewer()
+                    } label: {
+                        Label("网格", systemImage: "chevron.backward")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("返回网格 (Esc)")
+                    .accessibilityLabel("返回网格")
+                } else {
+                    Button {
+                        chooseFolder(model)
+                    } label: {
+                        Label("打开", systemImage: "folder")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help("打开文件夹 (⌘O)")
+                }
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                gridToolbarItems
+                viewerToolbarItems
+            }
+        }
         .overlay(alignment: .bottom) {
             toastView
         }
@@ -44,6 +68,15 @@ struct ContentView: View {
         }
         .onChange(of: model.listingRevision) { _, _ in
             toasts.show("列表已更新", canUndo: false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .undoTrashRequested)) { _ in
+            toasts.undo(in: model)
+        }
+        .onChange(of: model.mode) { _, mode in
+            if mode != .grid {
+                keywordFocused = false
+                NSApp.keyWindow?.makeFirstResponder(nil)
+            }
         }
         .background {
             EventMonitor(
@@ -62,6 +95,75 @@ struct ContentView: View {
 
     private var errorPresented: Binding<Bool> {
         Binding(get: { model.statusMessage != nil }, set: { if !$0 { model.statusMessage = nil } })
+    }
+
+    private var windowTitle: String {
+        switch model.mode {
+        case .viewer:
+            return model.catalog.selectedFile?.filename
+                ?? model.folderURL?.lastPathComponent
+                ?? "FastImageView"
+        case .grid:
+            return model.folderURL?.lastPathComponent ?? "FastImageView"
+        case .noFolder:
+            return "FastImageView"
+        }
+    }
+
+    @ViewBuilder
+    private var gridToolbarItems: some View {
+        if model.mode == .grid {
+            searchField
+            formatMenu
+            Text(folderCountText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            if model.isScanning {
+                ProgressView()
+                    .controlSize(.small)
+                    .help("正在读取文件夹…")
+                    .accessibilityLabel("正在读取文件夹")
+            }
+            if model.catalog.selectedFile != nil {
+                trashButton
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var viewerToolbarItems: some View {
+        if model.mode == .viewer, let file = model.catalog.selectedFile {
+            Text(viewerIndexText(file))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            if model.fit == .actual, let image = model.cachedViewerImage(file) {
+                Text("\(image.width)×\(image.height)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .help(file.format.isRaw ? "原片显示的是内嵌预览尺寸" : "图片像素尺寸")
+            }
+            Picker("显示方式", selection: fitMode) {
+                Text("适合窗口").tag(ViewerFit.fit)
+                Text("实际像素").tag(ViewerFit.actual)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 180)
+            trashButton
+        }
+    }
+
+    private var trashButton: some View {
+        Button(role: .destructive) {
+            toasts.deleteSelection(in: model)
+        } label: {
+            Image(systemName: "trash")
+        }
+        .help("移到废纸篓 (Delete)")
+        .accessibilityLabel("移到废纸篓")
     }
 
     // MARK: - 空状态（未打开文件夹）
@@ -160,48 +262,6 @@ struct ContentView: View {
 
     // MARK: - 筛选栏
 
-    private var filterBar: some View {
-        HStack(spacing: theme.spacingSM) {
-            Button {
-                chooseFolder(model)
-            } label: {
-                Label("打开", systemImage: "folder")
-            }
-            .controlSize(.small)
-            .help("打开文件夹 (⌘O)")
-
-            searchField
-            formatMenu
-
-            Spacer(minLength: theme.spacingSM)
-
-            if model.isScanning {
-                ProgressView()
-                    .controlSize(.small)
-                    .help("正在读取文件夹…")
-                    .accessibilityLabel("正在读取文件夹")
-            }
-
-            folderInfo
-
-            if model.catalog.selectedFile != nil {
-                Divider()
-                    .frame(height: 16)
-                Button(role: .destructive) {
-                    toasts.deleteSelection(in: model)
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-                .help("移到废纸篓 (Delete)")
-                .accessibilityLabel("移到废纸篓")
-            }
-        }
-        .padding(.horizontal, theme.spacingLG)
-        .padding(.vertical, theme.spacingSM)
-        .background(.bar)
-    }
-
     private var searchField: some View {
         HStack(spacing: theme.spacingXS) {
             Image(systemName: "magnifyingglass")
@@ -229,7 +289,7 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: theme.radiusSmall)
                 .strokeBorder(keywordFocused ? theme.focusStroke : .clear, lineWidth: 2)
         }
-        .frame(minWidth: 150, idealWidth: 220, maxWidth: 260)
+        .frame(width: 220)
     }
 
     private var formatMenu: some View {
@@ -248,7 +308,6 @@ struct ContentView: View {
                 Text(formatMenuTitle)
             }
         }
-        .menuStyle(.borderlessButton)
         .fixedSize()
         .help("按格式筛选")
         .disabled(model.catalog.availableFormats.isEmpty)
@@ -259,22 +318,6 @@ struct ContentView: View {
         if selected.isEmpty { return "格式" }
         if selected.count == 1, let format = selected.first { return "格式 · \(format.badge)" }
         return "格式 · \(selected.count)"
-    }
-
-    private var folderInfo: some View {
-        HStack(spacing: theme.spacingXS) {
-            Image(systemName: "folder")
-                .foregroundStyle(.secondary)
-            Text(model.folderURL?.lastPathComponent ?? "")
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .layoutPriority(-1)
-            Text(folderCountText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize()
-        }
     }
 
     private var folderCountText: String {
@@ -387,7 +430,7 @@ struct ContentView: View {
         .overlay {
             ClickCountCatcher(
                 onClick: { clickCount in
-                    keywordFocused = false
+                    resignSearchFocus()
                     select(file)
                     if clickCount >= 2 {
                         model.openViewer(screenLongEdge: screenLongEdge())
@@ -409,6 +452,11 @@ struct ContentView: View {
 
     private func select(_ file: ImageFile) {
         model.select(url: file.url)
+    }
+
+    private func resignSearchFocus() {
+        keywordFocused = false
+        NSApp.keyWindow?.makeFirstResponder(nil)
     }
 
     private func makeContextMenu(for file: ImageFile) -> NSMenu {
@@ -476,9 +524,6 @@ struct ContentView: View {
                 viewerNavButton(previous: false, file: file)
             }
             .onHover { viewerHovered = $0 }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                viewerBar(file)
-            }
             .onChange(of: file.url) { _, _ in
                 if let image = model.cachedViewerImage(file) {
                     retainedViewerImage = image
@@ -519,57 +564,6 @@ struct ContentView: View {
 
     private func toggleFit() {
         model.setFit(model.fit == .fit ? .actual : .fit, screenLongEdge: screenLongEdge())
-    }
-
-    private func viewerBar(_ file: ImageFile) -> some View {
-        HStack(spacing: theme.spacingSM) {
-            Button {
-                model.closeViewer()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("返回网格 (Esc)")
-            .accessibilityLabel("返回网格")
-            Text(file.filename)
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Text(viewerIndexText(file))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            if model.fit == .actual, let image = model.cachedViewerImage(file) {
-                Text("\(image.width)×\(image.height)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .help(file.format.isRaw ? "原片显示的是内嵌预览尺寸" : "图片像素尺寸")
-            }
-            Spacer()
-            Picker("显示方式", selection: fitMode) {
-                Text("适合窗口").tag(ViewerFit.fit)
-                Text("实际像素").tag(ViewerFit.actual)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 180)
-            Divider()
-                .frame(height: 16)
-            Button(role: .destructive) {
-                toasts.deleteSelection(in: model)
-            } label: {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.borderless)
-            .help("移到废纸篓 (Delete)")
-            .accessibilityLabel("移到废纸篓")
-        }
-        .padding(.horizontal, theme.spacingLG)
-        .padding(.vertical, theme.spacingSM)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
     }
 
     private func viewerIndexText(_ file: ImageFile) -> String {
@@ -900,12 +894,15 @@ private struct EventMonitor: NSViewRepresentable {
                 command: event.modifierFlags.contains(.command),
                 charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? ""
             )
-            let focus: KeyFocus = keywordFocused.wrappedValue ? .keyword : .browser
+            let editingText = keywordFocused.wrappedValue
+                || NSApp.keyWindow?.firstResponder is NSTextView
+            let focus: KeyFocus = editingText ? .keyword : .browser
             switch interpretKey(chord, focus: focus, mode: model.mode) {
             case .passThrough:
                 return event
             case .resignKeywordFocus:
                 keywordFocused.wrappedValue = false
+                NSApp.keyWindow?.makeFirstResponder(nil)
                 return nil
             case .deletePhoto:
                 if let toasts {
@@ -926,6 +923,7 @@ private struct EventMonitor: NSViewRepresentable {
                 return nil
             case .openViewer:
                 keywordFocused.wrappedValue = false
+                NSApp.keyWindow?.makeFirstResponder(nil)
                 model.openViewer(screenLongEdge: screenLongEdge())
                 return nil
             case .closeViewer:

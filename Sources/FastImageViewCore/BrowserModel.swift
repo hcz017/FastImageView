@@ -86,6 +86,8 @@ public final class BrowserModel {
         )
     }
 
+    public var canUndo: Bool { !undoStack.isEmpty }
+
     public func beginOpen() -> Int {
         generation += 1
         isScanning = true

@@ -37,6 +37,27 @@ struct FastImageViewApp: App {
                 }
                 .disabled(model.recentFolders.isEmpty)
             }
+            CommandGroup(after: .undoRedo) {
+                Button("撤销移到废纸篓") {
+                    NotificationCenter.default.post(name: .undoTrashRequested, object: nil)
+                }
+                .disabled(!model.canUndo)
+            }
+            CommandGroup(after: .toolbar) {
+                Button("适合窗口") {
+                    model.setFit(.fit, screenLongEdge: screenLongEdge())
+                }
+                .keyboardShortcut("0")
+                .disabled(model.mode != .viewer)
+                Button("实际像素") {
+                    model.setFit(.actual, screenLongEdge: screenLongEdge())
+                }
+                .keyboardShortcut("1")
+                .disabled(model.mode != .viewer)
+            }
+            CommandGroup(replacing: .help) {
+                Button("键盘快捷键…") { showShortcutsHelp() }
+            }
         }
     }
 }
@@ -73,6 +94,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pendingFile = file
         }
     }
+}
+
+extension Notification.Name {
+    static let undoTrashRequested = Notification.Name("FastImageView.undoTrashRequested")
+}
+
+@MainActor
+func showShortcutsHelp() {
+    let alert = NSAlert()
+    alert.messageText = "键盘快捷键"
+    alert.informativeText = """
+    ⌘O  打开文件夹
+    ← →  上一张 / 下一张
+    ↑ ↓  在网格中移动选中项
+    空格  打开 / 关闭大图
+    0 / 1  适合窗口 / 实际像素
+    Return  打开大图
+    Delete / ⌘⌫  移到废纸篓
+    ⌘Z  撤销移到废纸篓
+    Esc  回到网格
+    """
+    alert.addButton(withTitle: "好")
+    alert.runModal()
 }
 
 @MainActor
