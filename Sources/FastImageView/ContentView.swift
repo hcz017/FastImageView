@@ -91,6 +91,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .focusSearchRequested)) { _ in
             focusSearch()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleCaptureInfoRequested)) { _ in
+            showCaptureInfo.toggle()
+        }
         .onChange(of: model.mode) { _, mode in
             guard pendingSearchFocus, mode == .grid else { return }
             pendingSearchFocus = false
@@ -229,7 +232,7 @@ struct ContentView: View {
             }
             .labelStyle(.titleAndIcon)
             .fontWeight(showCaptureInfo ? .semibold : .regular)
-            .help(showCaptureInfo ? "隐藏图片信息" : "显示图片信息")
+            .help(showCaptureInfo ? "隐藏图片信息 (I)" : "显示图片信息 (I)")
             .accessibilityLabel("图片信息")
             .accessibilityValue(showCaptureInfo ? "显示中" : "已隐藏")
             trashButton
@@ -1215,6 +1218,9 @@ private struct EventMonitor: NSViewRepresentable {
                 return nil
             case .copyImage:
                 NotificationCenter.default.post(name: .copyImageRequested, object: nil)
+                return nil
+            case .toggleCaptureInfo:
+                NotificationCenter.default.post(name: .toggleCaptureInfoRequested, object: nil)
                 return nil
             case .openFolder:
                 return event

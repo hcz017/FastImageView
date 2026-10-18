@@ -26,6 +26,7 @@ public enum KeyAction: Equatable, Sendable {
     case zoomIn
     case zoomOut
     case copyImage
+    case toggleCaptureInfo
     case openFolder
 }
 
@@ -63,6 +64,7 @@ public func interpretKey(_ key: KeyChord, focus: KeyFocus, mode: BrowserMode) ->
     case 49 where mode == .viewer && !key.command: return .closeViewer
     case 29 where mode == .viewer: return .fit
     case 18 where mode == .viewer: return .actualPixels
+    case 34 where mode == .viewer: return .toggleCaptureInfo
     default: return .passThrough
     }
 }

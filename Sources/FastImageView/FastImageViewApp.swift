@@ -126,6 +126,7 @@ extension Notification.Name {
     static let copyImageRequested = Notification.Name("FastImageView.copyImageRequested")
     static let copyPathsRequested = Notification.Name("FastImageView.copyPathsRequested")
     static let focusSearchRequested = Notification.Name("FastImageView.focusSearchRequested")
+    static let toggleCaptureInfoRequested = Notification.Name("FastImageView.toggleCaptureInfoRequested")
 }
 
 @MainActor
@@ -139,6 +140,7 @@ func showShortcutsHelp() {
     ⌘F  搜索文件名
     空格  打开 / 关闭大图
     0 / 1  适合窗口 / 实际像素
+    I  显示 / 隐藏图片信息
     ⌘+ / ⌘−  放大 / 缩小
     ⌘滚轮 / 捏合  连续缩放
     拖拽  放大后平移
