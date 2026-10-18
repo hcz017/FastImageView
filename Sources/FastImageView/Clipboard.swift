@@ -1,5 +1,34 @@
 import AppKit
+import ImageIO
 import UniformTypeIdentifiers
+import FastImageViewCore
+
+enum Clipboard {
+    @discardableResult
+    static func copyImage(at url: URL) -> Bool {
+        guard let image = image(at: url) else { return false }
+        let board = NSPasteboard.general
+        board.clearContents()
+        return board.writeObjects([image])
+    }
+
+    static func copyPaths(_ paths: [String]) {
+        guard !paths.isEmpty else { return }
+        let board = NSPasteboard.general
+        board.clearContents()
+        board.setString(paths.joined(separator: "\n"), forType: .string)
+    }
+
+    private static func image(at url: URL) -> NSImage? {
+        if let image = NSImage(contentsOf: url), image.isValid, image.size.width > 0 {
+            return image
+        }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options = ImageIOThumbnailOptions.dictionary(maxPixelSize: 4096) as CFDictionary
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+    }
+}
 
 enum FileDrop {
     static func load(_ providers: [NSItemProvider]) async -> [URL] {

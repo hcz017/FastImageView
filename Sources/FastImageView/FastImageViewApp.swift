@@ -43,6 +43,16 @@ struct FastImageViewApp: App {
                 }
                 .disabled(!model.canUndo)
             }
+            CommandGroup(after: .pasteboard) {
+                Button("拷贝图片") {
+                    NotificationCenter.default.post(name: .copyImageRequested, object: nil)
+                }
+                .disabled(model.catalog.selectedFile == nil)
+                Button("拷贝路径") {
+                    NotificationCenter.default.post(name: .copyPathsRequested, object: nil)
+                }
+                .disabled(model.catalog.selectedFile == nil)
+            }
             CommandGroup(after: .toolbar) {
                 Button("放大") {
                     model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
@@ -108,6 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension Notification.Name {
     static let undoTrashRequested = Notification.Name("FastImageView.undoTrashRequested")
+    static let copyImageRequested = Notification.Name("FastImageView.copyImageRequested")
+    static let copyPathsRequested = Notification.Name("FastImageView.copyPathsRequested")
 }
 
 @MainActor
@@ -126,6 +138,7 @@ func showShortcutsHelp() {
     Return  打开大图
     ⌘点击 / ⇧点击  多选
     Delete / ⌘⌫  移到废纸篓
+    ⌘C  拷贝图片
     ⌘Z  撤销移到废纸篓
     Esc  回到网格
     """

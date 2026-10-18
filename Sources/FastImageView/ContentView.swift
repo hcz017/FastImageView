@@ -76,6 +76,12 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .undoTrashRequested)) { _ in
             toasts.undo(in: model)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .copyImageRequested)) { _ in
+            copyPrimaryImage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .copyPathsRequested)) { _ in
+            copySelectionPaths()
+        }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             guard providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else {
                 return false
@@ -508,6 +514,7 @@ struct ContentView: View {
             model.select(url: file.url)
         }
         resignSearchFocus()
+        let copy = copySet(for: file)
         let model = self.model
         let toasts = self.toasts
         let target = ContextMenuTarget()
@@ -520,6 +527,12 @@ struct ContentView: View {
         target.onCopyName = {
             copyFilename(file)
         }
+        target.onCopyImage = {
+            copyImage(at: copy.imageURL)
+        }
+        target.onCopyPath = {
+            Clipboard.copyPaths(copy.paths)
+        }
         target.onTrash = {
             toasts.deleteSelection(in: model)
         }
@@ -529,6 +542,8 @@ struct ContentView: View {
         addContextItem(menu, title: "在大图中打开", action: #selector(ContextMenuTarget.openAction(_:)), target: target)
         addContextItem(menu, title: "在访达中显示", action: #selector(ContextMenuTarget.revealAction(_:)), target: target)
         addContextItem(menu, title: "拷贝文件名", action: #selector(ContextMenuTarget.copyNameAction(_:)), target: target)
+        addContextItem(menu, title: "拷贝图片", action: #selector(ContextMenuTarget.copyImageAction(_:)), target: target)
+        addContextItem(menu, title: copy.paths.count > 1 ? "拷贝 \(copy.paths.count) 个路径" : "拷贝路径", action: #selector(ContextMenuTarget.copyPathAction(_:)), target: target)
         menu.addItem(.separator())
         addContextItem(menu, title: "移到废纸篓", action: #selector(ContextMenuTarget.trashAction(_:)), target: target)
         return menu
@@ -546,6 +561,28 @@ struct ContentView: View {
         NSPasteboard.general.setString(file.filename, forType: .string)
     }
 
+    private func copySet(for file: ImageFile) -> CopySet {
+        CopyRouting.make(clicked: file.url, orderedSelection: model.catalog.deletionTargets.map(\.url))
+    }
+
+    private func copyPrimaryImage() {
+        guard let file = model.catalog.selectedFile else { return }
+        copyImage(at: file.url)
+    }
+
+    private func copySelectionPaths() {
+        let targets = model.catalog.deletionTargets
+        let paths = (targets.isEmpty ? model.catalog.selectedFile.map { [$0] } ?? [] : targets).map(\.url.path)
+        Clipboard.copyPaths(paths)
+    }
+
+    private func copyImage(at url: URL) {
+        guard Clipboard.copyImage(at: url) else {
+            model.statusMessage = "无法拷贝这张图片"
+            return
+        }
+    }
+
     // MARK: - 查看器
 
     private func viewer(_ file: ImageFile) -> some View {
@@ -558,6 +595,8 @@ struct ContentView: View {
                     NSWorkspace.shared.activateFileViewerSelecting([file.url])
                 }
                 Button("拷贝文件名") { copyFilename(file) }
+                Button("拷贝图片") { copyImage(at: file.url) }
+                Button("拷贝路径") { Clipboard.copyPaths([file.url.path]) }
                 Divider()
                 Button("移到废纸篓", role: .destructive) {
                     toasts.deleteSelection(in: model)
@@ -947,11 +986,15 @@ private final class ContextMenuTarget: NSObject {
     var onOpen: (() -> Void)?
     var onReveal: (() -> Void)?
     var onCopyName: (() -> Void)?
+    var onCopyImage: (() -> Void)?
+    var onCopyPath: (() -> Void)?
     var onTrash: (() -> Void)?
 
     @objc func openAction(_ sender: Any?) { onOpen?() }
     @objc func revealAction(_ sender: Any?) { onReveal?() }
     @objc func copyNameAction(_ sender: Any?) { onCopyName?() }
+    @objc func copyImageAction(_ sender: Any?) { onCopyImage?() }
+    @objc func copyPathAction(_ sender: Any?) { onCopyPath?() }
     @objc func trashAction(_ sender: Any?) { onTrash?() }
 }
 
@@ -1033,6 +1076,9 @@ private struct EventMonitor: NSViewRepresentable {
                 return nil
             case .zoomOut:
                 model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                return nil
+            case .copyImage:
+                NotificationCenter.default.post(name: .copyImageRequested, object: nil)
                 return nil
             case .openFolder:
                 return event

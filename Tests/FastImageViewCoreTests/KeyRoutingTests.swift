@@ -36,7 +36,9 @@ final class KeyRoutingTests: XCTestCase {
     func testViewerZoomStaysOutOfTheSearchField() {
         XCTAssertEqual(interpretKey(key(24, command: true, chars: "="), focus: .browser, mode: .viewer), .zoomIn)
         XCTAssertEqual(interpretKey(key(27, command: true, chars: "-"), focus: .browser, mode: .viewer), .zoomOut)
+        XCTAssertEqual(interpretKey(key(8, command: true, chars: "c"), focus: .browser, mode: .grid), .copyImage)
         XCTAssertEqual(interpretKey(key(24, command: true, chars: "="), focus: .browser, mode: .grid), .passThrough)
+        XCTAssertEqual(interpretKey(key(8, command: true, chars: "c"), focus: .keyword, mode: .grid), .passThrough)
         XCTAssertEqual(interpretKey(key(27, command: true, chars: "-"), focus: .keyword, mode: .viewer), .passThrough)
     }
 

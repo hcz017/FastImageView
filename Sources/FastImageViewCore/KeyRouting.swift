@@ -23,6 +23,7 @@ public enum KeyAction: Equatable, Sendable {
     case actualPixels
     case zoomIn
     case zoomOut
+    case copyImage
     case openFolder
 }
 
@@ -45,6 +46,7 @@ public func interpretKey(_ key: KeyChord, focus: KeyFocus, mode: BrowserMode) ->
     }
     if key.keyCode == 51 || key.keyCode == 117 { return .deletePhoto }
     if key.command && key.keyCode == 6 { return .undoTrash }
+    if key.command && key.keyCode == 8 { return .copyImage }
     if mode == .viewer && key.command && key.keyCode == 24 { return .zoomIn }
     if mode == .viewer && key.command && key.keyCode == 27 { return .zoomOut }
     switch key.keyCode {
