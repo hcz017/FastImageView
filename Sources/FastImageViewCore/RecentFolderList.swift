@@ -26,6 +26,11 @@ public struct RecentFolderList: Equatable, Sendable {
         }
     }
 
+    public mutating func remove(_ url: URL) {
+        let path = url.standardizedFileURL.path
+        paths.removeAll { $0 == path }
+    }
+
     public func save(to defaults: UserDefaults, key: String = RecentFolderList.defaultsKey) {
         defaults.set(paths, forKey: key)
     }

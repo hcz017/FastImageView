@@ -327,34 +327,11 @@ struct ContentView: View {
             Text("最近打开")
                 .font(.headline)
             ForEach(model.recentFolders, id: \.path) { url in
-                Button {
-                    model.open(folder: url)
-                } label: {
-                    HStack(spacing: theme.spacingSM) {
-                        Image(systemName: "folder")
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: theme.spacingXS) {
-                            Text(url.lastPathComponent)
-                                .lineLimit(1)
-                            Text(url.path)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .padding(.horizontal, theme.spacingMD)
-                    .padding(.vertical, theme.spacingSM)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .background(
-                    theme.recentRowFill,
-                    in: RoundedRectangle(cornerRadius: theme.radiusSmall)
+                RecentFolderRow(
+                    url: url,
+                    missing: !FileManager.default.fileExists(atPath: url.path),
+                    onOpen: { model.open(folder: url) },
+                    onRemove: { model.removeRecent(url) }
                 )
             }
         }
@@ -1031,6 +1008,64 @@ private final class ToastModel: ObservableObject {
     func dismiss() {
         dismissTask?.cancel()
         current = nil
+    }
+}
+
+private struct RecentFolderRow: View {
+    @Environment(\.appTheme) private var theme
+    let url: URL
+    let missing: Bool
+    let onOpen: () -> Void
+    let onRemove: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: theme.spacingSM) {
+            Button(action: onOpen) {
+                HStack(spacing: theme.spacingSM) {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: theme.spacingXS) {
+                        Text(url.lastPathComponent)
+                            .lineLimit(1)
+                            .foregroundStyle(.primary)
+                        Text(missing ? "路径已不存在" : url.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(missing)
+            .accessibilityLabel(missing ? "\(url.lastPathComponent)，路径已不存在" : url.lastPathComponent)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .opacity(hovered ? 1 : 0)
+            .help("从最近打开中移除")
+            .accessibilityLabel("从最近打开中移除 \(url.lastPathComponent)")
+        }
+        .padding(.horizontal, theme.spacingMD)
+        .padding(.vertical, theme.spacingSM)
+        .background(
+            hovered ? theme.recentRowHoverFill : theme.recentRowFill,
+            in: RoundedRectangle(cornerRadius: theme.radiusSmall)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
+        .contextMenu {
+            Button("从最近打开中移除", role: .destructive) { onRemove() }
+        }
     }
 }
 

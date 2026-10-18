@@ -29,6 +29,16 @@ final class RecentFolderListTests: XCTestCase {
         let loaded = RecentFolderList(defaults: defaults)
         XCTAssertEqual(loaded.paths, ["/pics/a"])
     }
+
+    func testRemoveDropsOnlyMatchingPath() {
+        var list = RecentFolderList()
+        list.remember(URL(fileURLWithPath: "/pics/a"))
+        list.remember(URL(fileURLWithPath: "/pics/b"))
+        list.remove(URL(fileURLWithPath: "/pics/a/"))
+        XCTAssertEqual(list.paths, ["/pics/b"])
+        list.remove(URL(fileURLWithPath: "/pics/missing"))
+        XCTAssertEqual(list.paths, ["/pics/b"])
+    }
 }
 
 @MainActor

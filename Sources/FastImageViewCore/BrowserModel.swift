@@ -516,6 +516,14 @@ public final class BrowserModel {
         }
     }
 
+    public func removeRecent(_ url: URL) {
+        recentList.remove(url)
+        recentFolders = recentList.urls
+        if let recentDefaults {
+            recentList.save(to: recentDefaults)
+        }
+    }
+
     public func thumbnailRequest(_ file: ImageFile) {
         guard file.iCloudState != .notDownloaded else { return }
         previews.requestThumbnail(file: file)

@@ -258,4 +258,24 @@ final class BrowserModelTests: XCTestCase {
         pipeline.onGenerationChange?()
         XCTAssertEqual(model.renderGeneration, 7)
     }
+
+    func testRemoveRecentUpdatesListAndDefaults() {
+        let defaults = UserDefaults(suiteName: "BrowserModelRemoveRecentTests")!
+        defaults.removePersistentDomain(forName: "BrowserModelRemoveRecentTests")
+        let model = BrowserModel(
+            scanner: ScriptedScanner(),
+            deletion: DeletionService(storage: ModelTrash(files: [])),
+            previews: RecordingPipeline(),
+            recentDefaults: defaults
+        )
+        let url = URL(fileURLWithPath: "/pics")
+        let generation = model.beginOpen()
+        model.pendingFolderURL = url
+        model.acceptScan(generation: generation, outcome: .success([]))
+        XCTAssertEqual(model.recentFolders.map(\.path), ["/pics"])
+
+        model.removeRecent(url)
+        XCTAssertEqual(model.recentFolders, [])
+        XCTAssertEqual(defaults.stringArray(forKey: "recentFolderPaths") ?? [], [])
+    }
 }

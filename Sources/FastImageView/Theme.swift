@@ -25,6 +25,7 @@ struct AppTheme {
     // MARK: 颜色
     let thumbnailPlaceholder = Color.gray.opacity(0.15)
     let recentRowFill = Color.gray.opacity(0.08)
+    let recentRowHoverFill = Color.gray.opacity(0.14)
     let selectionFill = Color.accentColor.opacity(0.18)
     let selectionStroke = Color.accentColor
     let selectionStrokeWidth: CGFloat = 2
