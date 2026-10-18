@@ -142,8 +142,8 @@ func showShortcutsHelp() {
     ⌘+ / ⌘−  放大 / 缩小
     ⌘滚轮 / 捏合  连续缩放
     拖拽  放大后平移
-    Return  打开大图
     ⌘点击 / ⇧点击  多选
+    Return  打开大图
     Delete / ⌘⌫  移到废纸篓
     ⌘C  拷贝图片
     ⌘Z  撤销移到废纸篓

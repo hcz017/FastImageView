@@ -589,66 +589,6 @@ struct ContentView: View {
         NSPasteboard.general.setString(file.filename, forType: .string)
     }
 
-    private func copySet(for file: ImageFile) -> CopySet {
-        CopyRouting.make(clicked: file.url, orderedSelection: model.catalog.deletionTargets.map(\.url))
-    }
-
-    private func copyPrimaryImage() {
-        guard let file = model.catalog.selectedFile else { return }
-        copyImage(at: file.url)
-    }
-
-    private func copySelectionPaths() {
-        let targets = model.catalog.deletionTargets
-        let paths = (targets.isEmpty ? model.catalog.selectedFile.map { [$0] } ?? [] : targets).map(\.url.path)
-        Clipboard.copyPaths(paths)
-    }
-
-    private func loadViewerDetails(_ file: ImageFile) async {
-        let url = file.url
-        if file.format == .gif {
-            gifStarted = Date()
-            gifClip.load(url: url, maxPixelSize: min(screenLongEdge(), GIFPlayback.maxPixel))
-        } else {
-            gifClip.clear()
-        }
-        let summary = await Task.detached(priority: .utility) {
-            CaptureInfoReader.load(url: url).summary
-        }.value
-        guard file.url == url else { return }
-        captureSummary = summary
-    }
-
-    private func focusSearch() {
-        guard model.mode != .noFolder else { return }
-        if model.mode == .viewer {
-            pendingSearchFocus = true
-            model.closeViewer()
-            return
-        }
-        DispatchQueue.main.async { focusSearchField() }
-    }
-
-    private func focusSearchField() {
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
-        if let field = SearchFieldFinder.find(in: window) {
-            window.makeFirstResponder(field)
-            return
-        }
-        DispatchQueue.main.async {
-            guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
-                  let field = SearchFieldFinder.find(in: window) else { return }
-            window.makeFirstResponder(field)
-        }
-    }
-
-    private func copyImage(at url: URL) {
-        guard Clipboard.copyImage(at: url) else {
-            model.statusMessage = "无法拷贝这张图片"
-            return
-        }
-    }
-
     // MARK: - 查看器
 
     private func viewer(_ file: ImageFile) -> some View {
@@ -772,6 +712,12 @@ struct ContentView: View {
         }
     }
 
+    private func zoomableImage(_ image: CGImage, dimmed: Bool) -> some View {
+        zoomCanvas(imageWidth: Double(image.width), imageHeight: Double(image.height)) { metrics in
+            placedImage(image, metrics: metrics, dimmed: dimmed)
+        }
+    }
+
     private func animatedGIF(_ frames: [CGImage], delays: [Double]) -> some View {
         let sample = frames[0]
         return zoomCanvas(imageWidth: Double(sample.width), imageHeight: Double(sample.height)) { metrics in
@@ -782,12 +728,6 @@ struct ContentView: View {
                 )
                 placedImage(frames[min(index, frames.count - 1)], metrics: metrics, dimmed: false)
             }
-        }
-    }
-
-    private func zoomableImage(_ image: CGImage, dimmed: Bool) -> some View {
-        zoomCanvas(imageWidth: Double(image.width), imageHeight: Double(image.height)) { metrics in
-            placedImage(image, metrics: metrics, dimmed: dimmed)
         }
     }
 
@@ -854,6 +794,66 @@ struct ContentView: View {
                 fitScale: metrics.fitScale
             )
         )
+    }
+
+    private func copySet(for file: ImageFile) -> CopySet {
+        CopyRouting.make(clicked: file.url, orderedSelection: model.catalog.deletionTargets.map(\.url))
+    }
+
+    private func copyPrimaryImage() {
+        guard let file = model.catalog.selectedFile else { return }
+        copyImage(at: file.url)
+    }
+
+    private func copySelectionPaths() {
+        let targets = model.catalog.deletionTargets
+        let paths = (targets.isEmpty ? model.catalog.selectedFile.map { [$0] } ?? [] : targets).map(\.url.path)
+        Clipboard.copyPaths(paths)
+    }
+
+    private func loadViewerDetails(_ file: ImageFile) async {
+        let url = file.url
+        if file.format == .gif {
+            gifStarted = Date()
+            gifClip.load(url: url, maxPixelSize: min(screenLongEdge(), GIFPlayback.maxPixel))
+        } else {
+            gifClip.clear()
+        }
+        let summary = await Task.detached(priority: .utility) {
+            CaptureInfoReader.load(url: url).summary
+        }.value
+        guard file.url == url else { return }
+        captureSummary = summary
+    }
+
+    private func focusSearch() {
+        guard model.mode != .noFolder else { return }
+        if model.mode == .viewer {
+            pendingSearchFocus = true
+            model.closeViewer()
+            return
+        }
+        DispatchQueue.main.async { focusSearchField() }
+    }
+
+    private func focusSearchField() {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        if let field = SearchFieldFinder.find(in: window) {
+            window.makeFirstResponder(field)
+            return
+        }
+        DispatchQueue.main.async {
+            guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
+                  let field = SearchFieldFinder.find(in: window) else { return }
+            window.makeFirstResponder(field)
+        }
+    }
+
+    private func copyImage(at url: URL) {
+        guard Clipboard.copyImage(at: url) else {
+            model.statusMessage = "无法拷贝这张图片"
+            return
+        }
     }
 
     @ViewBuilder
