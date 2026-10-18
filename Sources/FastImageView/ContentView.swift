@@ -67,6 +67,11 @@ struct ContentView: View {
                 gridToolbarItems
                 viewerToolbarItems
             }
+            ToolbarItem(placement: .destructiveAction) {
+                if model.mode != .noFolder, model.catalog.selectedFile != nil {
+                    trashButton
+                }
+            }
         }
         .overlay(alignment: .bottom) {
             toastView
@@ -192,50 +197,47 @@ struct ContentView: View {
                     .help("正在读取文件夹…")
                     .accessibilityLabel("正在读取文件夹")
             }
-            if model.catalog.selectedFile != nil {
-                trashButton
-            }
         }
     }
 
     @ViewBuilder
     private var viewerToolbarItems: some View {
         if model.mode == .viewer, model.catalog.selectedFile != nil {
-            Button {
-                model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
-            } label: {
-                Image(systemName: "minus.magnifyingglass")
+            ControlGroup {
+                Button {
+                    model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                } label: {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .help("缩小 (⌘−)")
+                .accessibilityLabel("缩小")
+                Text(model.zoomLabel)
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 44)
+                    .accessibilityLabel("缩放 \(model.zoomLabel)")
+                Button {
+                    model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                } label: {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .help("放大 (⌘+)")
+                .accessibilityLabel("放大")
             }
-            .help("缩小 (⌘−)")
-            .accessibilityLabel("缩小")
-            Text(model.zoomLabel)
-                .font(.caption.monospacedDigit())
-                .frame(minWidth: 44)
-                .accessibilityLabel("缩放 \(model.zoomLabel)")
-            Button {
-                model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
-            } label: {
-                Image(systemName: "plus.magnifyingglass")
+            ControlGroup {
+                Toggle("适合窗口", isOn: fitWindowToggle)
+                    .help("适合窗口 (0)")
+                Toggle("实际像素", isOn: actualPixelsToggle)
+                    .help("实际像素 (1)")
+                Button {
+                    showCaptureInfo.toggle()
+                } label: {
+                    Label("图片信息", systemImage: showCaptureInfo ? "info.circle.fill" : "info.circle")
+                }
+                .labelStyle(.titleAndIcon)
+                .help(showCaptureInfo ? "隐藏图片信息 (I)" : "显示图片信息 (I)")
+                .accessibilityLabel("图片信息")
+                .accessibilityValue(showCaptureInfo ? "显示中" : "已隐藏")
             }
-            .help("放大 (⌘+)")
-            .accessibilityLabel("放大")
-            Toggle("适合窗口", isOn: fitWindowToggle)
-                .toggleStyle(.button)
-                .help("适合窗口 (0)")
-            Toggle("实际像素", isOn: actualPixelsToggle)
-                .toggleStyle(.button)
-                .help("实际像素 (1)")
-            Button {
-                showCaptureInfo.toggle()
-            } label: {
-                Label("图片信息", systemImage: showCaptureInfo ? "info.circle.fill" : "info.circle")
-            }
-            .labelStyle(.titleAndIcon)
-            .fontWeight(showCaptureInfo ? .semibold : .regular)
-            .help(showCaptureInfo ? "隐藏图片信息 (I)" : "显示图片信息 (I)")
-            .accessibilityLabel("图片信息")
-            .accessibilityValue(showCaptureInfo ? "显示中" : "已隐藏")
-            trashButton
         }
     }
 
