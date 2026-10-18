@@ -216,16 +216,12 @@ struct ContentView: View {
             }
             .help("放大 (⌘+)")
             .accessibilityLabel("放大")
-            Button("适合窗口") {
-                model.setFit(.fit, screenLongEdge: screenLongEdge())
-            }
-            .fontWeight(model.zoom == .fit ? .semibold : .regular)
-            .help("适合窗口 (0)")
-            Button("实际像素") {
-                model.setFit(.actual, screenLongEdge: screenLongEdge())
-            }
-            .fontWeight(model.zoom == .actual ? .semibold : .regular)
-            .help("实际像素 (1)")
+            Toggle("适合窗口", isOn: fitWindowToggle)
+                .toggleStyle(.button)
+                .help("适合窗口 (0)")
+            Toggle("实际像素", isOn: actualPixelsToggle)
+                .toggleStyle(.button)
+                .help("实际像素 (1)")
             Button {
                 showCaptureInfo.toggle()
             } label: {
@@ -238,6 +234,24 @@ struct ContentView: View {
             .accessibilityValue(showCaptureInfo ? "显示中" : "已隐藏")
             trashButton
         }
+    }
+
+    /// 自定义缩放（⌘±、捏合、滚轮）时两个开关都不亮，符合实际状态。
+    private var fitWindowToggle: Binding<Bool> {
+        Binding(
+            get: { model.zoom == .fit },
+            set: { if $0 { model.setFit(.fit, screenLongEdge: screenLongEdge()) } }
+        )
+    }
+
+    private var actualPixelsToggle: Binding<Bool> {
+        Binding(
+            get: {
+                if case .actual = model.zoom { return true }
+                return false
+            },
+            set: { if $0 { model.setFit(.actual, screenLongEdge: screenLongEdge()) } }
+        )
     }
 
     private var trashButton: some View {
