@@ -22,6 +22,10 @@ struct AppTheme {
     let tileAspectRatio: CGFloat = 4.0 / 3.0
     let gridSpacing: CGFloat = 12
 
+    // MARK: 大图
+    /// 图片信息浮层按内容收窄，超长字段在此宽度内换行。
+    let captureInfoMaxWidth: CGFloat = 250
+
     // MARK: 颜色
     let thumbnailPlaceholder = Color.gray.opacity(0.15)
     let recentRowFill = Color.gray.opacity(0.08)
