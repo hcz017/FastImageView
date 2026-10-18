@@ -51,6 +51,7 @@ public final class BrowserModel {
     private var recentList: RecentFolderList
     private let recentDefaults: UserDefaults?
     private var pendingSelectionURL: URL?
+    private var pendingSelectionURLs: [URL] = []
     private var undoStack: [UndoEntry] = []
     private var fileIdentity: [String: String] = [:]
     private var folderRefreshTask: Task<Void, Never>?
@@ -146,8 +147,8 @@ public final class BrowserModel {
         return generation
     }
 
-    public func open(folder: URL, selecting file: URL? = nil, screenLongEdge: Int? = nil) {
-        let token = beginOpening(folder: folder, selecting: file, screenLongEdge: screenLongEdge)
+    public func open(folder: URL, selecting file: URL? = nil, selectingMany: [URL] = [], screenLongEdge: Int? = nil) {
+        let token = beginOpening(folder: folder, selecting: file, selectingMany: selectingMany, screenLongEdge: screenLongEdge)
         let scanner = self.scanner
         Task.detached(priority: .userInitiated) {
             let outcome = Result { try scanner.scan(folder: folder) }
@@ -171,10 +172,28 @@ public final class BrowserModel {
         }
     }
 
-    func beginOpening(folder: URL, selecting file: URL? = nil, screenLongEdge: Int? = nil) -> Int {
+    public func openDropped(_ urls: [URL], screenLongEdge: Int) {
+        let decision = DropRouting.decide(urls: urls) { url in
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
+        }
+        switch decision {
+        case .none:
+            statusMessage = "没有可打开的图片或文件夹"
+        case .folder(let folder):
+            open(folder: folder, screenLongEdge: screenLongEdge)
+        case .image(let file):
+            openImageFile(file, screenLongEdge: screenLongEdge)
+        case .images(let folder, let files):
+            open(folder: folder, selectingMany: files, screenLongEdge: screenLongEdge)
+        }
+    }
+
+    func beginOpening(folder: URL, selecting file: URL? = nil, selectingMany: [URL] = [], screenLongEdge: Int? = nil) -> Int {
         if let screenLongEdge { self.screenLongEdge = screenLongEdge }
         pendingFolderURL = folder
         pendingSelectionURL = file
+        pendingSelectionURLs = selectingMany
         return beginOpen()
     }
 
@@ -184,6 +203,7 @@ public final class BrowserModel {
         switch outcome {
         case .failure(let error):
             pendingSelectionURL = nil
+            pendingSelectionURLs = []
             if folderURL == nil {
                 openError = error.localizedDescription
                 mode = .noFolder
@@ -205,7 +225,18 @@ public final class BrowserModel {
             zoom = .fit
             pan = .zero
             openError = nil
-            if let wanted = pendingSelectionURL?.standardizedFileURL.path,
+            let many = files.filter { file in
+                pendingSelectionURLs.contains { $0.standardizedFileURL.path == file.url.standardizedFileURL.path }
+            }
+            if many.count > 1 {
+                var next = catalog
+                next.applySelection(url: many[0].url, gesture: .only)
+                for match in many.dropFirst() {
+                    next.applySelection(url: match.url, gesture: .toggle)
+                }
+                catalog = next
+                mode = .grid
+            } else if let wanted = (many.first?.url ?? pendingSelectionURL)?.standardizedFileURL.path,
                let match = files.first(where: { $0.url.standardizedFileURL.path == wanted }) {
                 select(url: match.url)
                 mode = .viewer
@@ -214,6 +245,7 @@ public final class BrowserModel {
                 mode = .grid
             }
             pendingSelectionURL = nil
+            pendingSelectionURLs = []
             fileIdentity = FileIdentity.byPath(files)
             watchCurrentFolder()
         }

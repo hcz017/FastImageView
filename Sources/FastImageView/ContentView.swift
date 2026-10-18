@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 import FastImageViewCore
 
 struct ContentView: View {
@@ -10,6 +11,7 @@ struct ContentView: View {
     @State private var hoveredURL: URL?
     @State private var viewerHovered = false
     @State private var retainedViewerImage: CGImage?
+    @State private var dropTargeted = false
     @State private var panOrigin: ImagePan?
     @StateObject private var toasts = ToastModel()
 
@@ -73,6 +75,29 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .undoTrashRequested)) { _ in
             toasts.undo(in: model)
+        }
+        .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
+            guard providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else {
+                return false
+            }
+            Task { @MainActor in
+                let urls = await FileDrop.load(providers)
+                model.openDropped(urls, screenLongEdge: screenLongEdge())
+            }
+            return true
+        }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: theme.radiusLarge)
+                    .strokeBorder(theme.selectionStroke, lineWidth: theme.selectionStrokeWidth)
+                    .background(theme.selectionFill)
+                    .overlay {
+                        Text("松开以打开")
+                            .font(.title3.weight(.semibold))
+                    }
+                    .padding(theme.spacingSM)
+                    .allowsHitTesting(false)
+            }
         }
         .onChange(of: model.mode) { _, mode in
             if mode != .grid {
