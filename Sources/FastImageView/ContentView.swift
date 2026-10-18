@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var gridColumns = 1
     @State private var pendingSearchFocus = false
     @State private var captureSummary = ""
+    @State private var showCaptureInfo = true
     @State private var gifStarted = Date()
     @StateObject private var gifClip = GIFClip()
     @StateObject private var toasts = ToastModel()
@@ -225,6 +226,16 @@ struct ContentView: View {
             }
             .fontWeight(model.zoom == .actual ? .semibold : .regular)
             .help("实际像素 (1)")
+            Button {
+                showCaptureInfo.toggle()
+            } label: {
+                Label("图片信息", systemImage: showCaptureInfo ? "info.circle.fill" : "info.circle")
+            }
+            .labelStyle(.titleAndIcon)
+            .fontWeight(showCaptureInfo ? .semibold : .regular)
+            .help(showCaptureInfo ? "隐藏图片信息" : "显示图片信息")
+            .accessibilityLabel("图片信息")
+            .accessibilityValue(showCaptureInfo ? "显示中" : "已隐藏")
             trashButton
         }
     }
@@ -615,19 +626,19 @@ struct ContentView: View {
                 viewerNavButton(previous: false, file: file)
             }
             .overlay(alignment: .topLeading) {
-                if !captureSummary.isEmpty {
+                if showCaptureInfo, !captureSummary.isEmpty {
                     Text(captureSummary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
                         .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, theme.spacingMD)
                         .padding(.vertical, theme.spacingSM)
-                        .frame(maxWidth: 560, alignment: .leading)
+                        .frame(maxWidth: 360, alignment: .leading)
                         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: theme.radiusSmall))
                         .padding(theme.spacingLG)
                         .allowsHitTesting(false)
-                        .accessibilityLabel("拍摄信息")
+                        .accessibilityLabel("图片信息")
                 }
             }
             .onHover { viewerHovered = $0 }
@@ -888,11 +899,11 @@ struct ContentView: View {
     private func formatBadge(_ format: ImageFormat) -> some View {
         Text(format.badge)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(theme.badgeForeground(isRaw: format.isRaw))
+            .foregroundStyle(theme.badgeForeground(for: format))
             .padding(.horizontal, theme.spacingXS)
             .padding(.vertical, theme.spacingXS)
             .background(
-                theme.badgeBackground(isRaw: format.isRaw),
+                theme.badgeBackground(for: format),
                 in: RoundedRectangle(cornerRadius: theme.radiusBadge)
             )
             .padding(theme.spacingXS)

@@ -38,8 +38,20 @@ final class CaptureInfoTests: XCTestCase {
             kCGImagePropertyTIFFDictionary: tiff
         ])
         XCTAssertEqual(
+            info.lines,
+            [
+                "2026-10-18 15:04",
+                "Apple iPhone 15 Pro · iPhone 15 Pro back camera",
+                "f/1.8 · 1/125 · ISO 80 · 6.9mm · 4032×3024"
+            ]
+        )
+        XCTAssertEqual(
             info.summary,
-            "2026-10-18 15:04 · Apple iPhone 15 Pro · iPhone 15 Pro back camera · f/1.8 · 1/125 · ISO 80 · 6.9mm · 4032×3024"
+            """
+            2026-10-18 15:04
+            Apple iPhone 15 Pro · iPhone 15 Pro back camera
+            f/1.8 · 1/125 · ISO 80 · 6.9mm · 4032×3024
+            """
         )
     }
 
@@ -48,6 +60,7 @@ final class CaptureInfoTests: XCTestCase {
             kCGImagePropertyPixelWidth: 800,
             kCGImagePropertyPixelHeight: 600
         ])
+        XCTAssertEqual(info.lines, ["800×600"])
         XCTAssertEqual(info.summary, "800×600")
     }
 }

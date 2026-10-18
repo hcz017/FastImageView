@@ -31,11 +31,28 @@ public struct CaptureInfo: Equatable, Sendable {
         self.pixelSize = pixelSize
     }
 
-    public var summary: String {
-        [capturedAt, camera, lens, aperture, shutter, iso, focalLength, pixelSize]
+    public var lines: [String] {
+        var rows: [String] = []
+        if let capturedAt, !capturedAt.isEmpty {
+            rows.append(capturedAt)
+        }
+        let gear = [camera, lens]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
-            .joined(separator: " · ")
+        if !gear.isEmpty {
+            rows.append(gear.joined(separator: " · "))
+        }
+        let exposure = [aperture, shutter, iso, focalLength, pixelSize]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        if !exposure.isEmpty {
+            rows.append(exposure.joined(separator: " · "))
+        }
+        return rows
+    }
+
+    public var summary: String {
+        lines.joined(separator: "\n")
     }
 }
 

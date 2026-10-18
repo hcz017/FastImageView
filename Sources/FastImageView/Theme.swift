@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import FastImageViewCore
 
 /// 集中管理配色、间距、圆角等视觉常量；视图里不再出现硬编码值。
 struct AppTheme {
@@ -30,12 +31,29 @@ struct AppTheme {
     let hoverStroke = Color.primary.opacity(0.18)
     let viewerCanvas = Color(nsColor: .underPageBackgroundColor)
 
-    func badgeBackground(isRaw: Bool) -> Color {
-        isRaw ? Color.orange.opacity(0.95) : Color.black.opacity(0.55)
+    func badgeBackground(for format: ImageFormat) -> Color {
+        switch format {
+        case .jpeg:
+            return Color(red: 0.18, green: 0.42, blue: 0.86).opacity(0.92)
+        case .png:
+            return Color(red: 0.12, green: 0.55, blue: 0.36).opacity(0.92)
+        case .heic:
+            return Color(red: 0.45, green: 0.28, blue: 0.78).opacity(0.92)
+        case .gif:
+            return Color(red: 0.78, green: 0.22, blue: 0.48).opacity(0.92)
+        case .tiff:
+            return Color(red: 0.12, green: 0.52, blue: 0.58).opacity(0.92)
+        case .webp:
+            return Color(red: 0.18, green: 0.58, blue: 0.72).opacity(0.92)
+        case .bmp:
+            return Color(red: 0.35, green: 0.40, blue: 0.52).opacity(0.92)
+        case .nef, .cr2, .cr3, .arw, .raf, .orf, .rw2, .dng, .pef:
+            return Color.orange.opacity(0.95)
+        }
     }
 
-    func badgeForeground(isRaw: Bool) -> Color {
-        isRaw ? .black.opacity(0.85) : .white
+    func badgeForeground(for format: ImageFormat) -> Color {
+        format.isRaw ? .black.opacity(0.85) : .white
     }
 }
 
