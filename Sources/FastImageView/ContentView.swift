@@ -746,20 +746,35 @@ struct ContentView: View {
     }
 
     private func zoomableImage(_ image: CGImage, dimmed: Bool) -> some View {
-        zoomCanvas(imageWidth: Double(image.width), imageHeight: Double(image.height)) { metrics in
-            placedImage(image, metrics: metrics, dimmed: dimmed)
+        let layout = ViewerImageSizing.layoutSize(
+            decodedWidth: image.width,
+            decodedHeight: image.height,
+            source: model.viewerSourceSize
+        )
+        let soft = ViewerImageSizing.isUpscalingPreview(
+            decodedWidth: image.width,
+            decodedHeight: image.height,
+            layout: layout
+        )
+        return zoomCanvas(imageWidth: Double(layout.width), imageHeight: Double(layout.height)) { metrics in
+            placedImage(image, metrics: metrics, dimmed: dimmed, soft: soft)
         }
     }
 
     private func animatedGIF(_ frames: [CGImage], delays: [Double]) -> some View {
         let sample = frames[0]
-        return zoomCanvas(imageWidth: Double(sample.width), imageHeight: Double(sample.height)) { metrics in
+        let layout = ViewerImageSizing.layoutSize(
+            decodedWidth: sample.width,
+            decodedHeight: sample.height,
+            source: model.viewerSourceSize
+        )
+        return zoomCanvas(imageWidth: Double(layout.width), imageHeight: Double(layout.height)) { metrics in
             TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
                 let index = GIFPlayback.index(
                     elapsed: context.date.timeIntervalSince(gifStarted),
                     delays: delays
                 )
-                placedImage(frames[min(index, frames.count - 1)], metrics: metrics, dimmed: false)
+                placedImage(frames[min(index, frames.count - 1)], metrics: metrics, dimmed: false, soft: false)
             }
         }
     }
@@ -779,13 +794,16 @@ struct ContentView: View {
                 .onChange(of: model.zoom) { _, _ in
                     publishViewerLayout(viewerMetrics(imageWidth: imageWidth, imageHeight: imageHeight, viewport: geo.size), viewport: geo.size)
                 }
+                .onChange(of: model.viewerSourceSize) { _, _ in
+                    publishViewerLayout(viewerMetrics(imageWidth: imageWidth, imageHeight: imageHeight, viewport: geo.size), viewport: geo.size)
+                }
         }
     }
 
-    private func placedImage(_ image: CGImage, metrics: CGSize, dimmed: Bool) -> some View {
+    private func placedImage(_ image: CGImage, metrics: CGSize, dimmed: Bool, soft: Bool) -> some View {
         Image(decorative: image, scale: 1)
             .resizable()
-            .interpolation(.high)
+            .interpolation(soft ? .medium : .high)
             .frame(width: metrics.width, height: metrics.height)
             .opacity(dimmed ? 0.55 : 1)
             .offset(x: model.pan.x, y: model.pan.y)

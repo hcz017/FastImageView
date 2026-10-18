@@ -54,4 +54,46 @@ final class ViewerZoomTests: XCTestCase {
         XCTAssertEqual(PreviewMaxPixel.viewer(zoom: .actual, screenLongEdge: 1800), 16384)
         XCTAssertEqual(PreviewMaxPixel.viewer(zoom: .multiple(1.5), screenLongEdge: 1800), 16384)
     }
+
+    func testLayoutPrefersTheFilePixelSizeOverTheDecodedPreview() {
+        let source = ImagePixelSize(width: 4032, height: 3024)
+        XCTAssertEqual(
+            ViewerImageSizing.layoutSize(decodedWidth: 1800, decodedHeight: 1350, source: source),
+            source
+        )
+        XCTAssertEqual(
+            ViewerImageSizing.layoutSize(decodedWidth: 1800, decodedHeight: 1350, source: nil),
+            ImagePixelSize(width: 1800, height: 1350)
+        )
+        XCTAssertFalse(
+            ViewerImageSizing.isUpscalingPreview(
+                decodedWidth: 4032,
+                decodedHeight: 3024,
+                layout: source
+            )
+        )
+        XCTAssertTrue(
+            ViewerImageSizing.isUpscalingPreview(
+                decodedWidth: 1800,
+                decodedHeight: 1350,
+                layout: source
+            )
+        )
+    }
+
+    func testOrientedPixelSizeMatchesThumbnailTransform() {
+        // Stored 4032×3024 with orientation 6 displays as portrait after transform.
+        XCTAssertEqual(
+            ImagePixelSize.oriented(width: 4032, height: 3024, orientation: 6),
+            ImagePixelSize(width: 3024, height: 4032)
+        )
+        XCTAssertEqual(
+            ImagePixelSize.oriented(width: 4032, height: 3024, orientation: 1),
+            ImagePixelSize(width: 4032, height: 3024)
+        )
+        XCTAssertEqual(
+            ImagePixelSize.oriented(width: 100, height: 200, orientation: 8),
+            ImagePixelSize(width: 200, height: 100)
+        )
+    }
 }

@@ -15,11 +15,23 @@ public struct ImageIOThumbnailDecoder: Sendable {
     }
 
     public func longEdge(url: URL) -> Int? {
+        pixelSize(url: url).map { max($0.width, $0.height) }
+    }
+
+    public func pixelSize(url: URL) -> ImagePixelSize? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = props[kCGImagePropertyPixelWidth] as? Int,
-              let height = props[kCGImagePropertyPixelHeight] as? Int else { return nil }
-        return max(width, height)
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
+            return nil
+        }
+        let width = (props[kCGImagePropertyPixelWidth] as? Int)
+            ?? (props[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue
+        let height = (props[kCGImagePropertyPixelHeight] as? Int)
+            ?? (props[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue
+        guard let width, let height, width > 0, height > 0 else { return nil }
+        let orientation = (props[kCGImagePropertyOrientation] as? Int)
+            ?? (props[kCGImagePropertyOrientation] as? NSNumber)?.intValue
+            ?? 1
+        return ImagePixelSize.oriented(width: width, height: height, orientation: orientation)
     }
 }
 

@@ -42,6 +42,7 @@ public final class BrowserModel {
     public private(set) var zoom: ViewerZoom = .fit
     public private(set) var pan = ImagePan.zero
     public private(set) var viewerLayout: ViewerLayout?
+    public private(set) var viewerSourceSize: ImagePixelSize?
     public private(set) var screenLongEdge = 1800
     public private(set) var renderGeneration = 0
     public private(set) var generation = 0
@@ -55,10 +56,12 @@ public final class BrowserModel {
     private var undoStack: [UndoEntry] = []
     private var fileIdentity: [String: String] = [:]
     private var folderRefreshTask: Task<Void, Never>?
+    private var viewerSourceURL: URL?
     private let folderWatch: any FolderWatching
     private let scanner: any FolderScanning
     private let deletion: DeletionService
     private let previews: any PreviewPipeline
+    private let imageIO = ImageIOThumbnailDecoder()
 
     public init(
         scanner: any FolderScanning,
@@ -364,6 +367,8 @@ public final class BrowserModel {
 
     public func closeViewer() {
         if mode == .viewer { mode = .grid }
+        viewerSourceSize = nil
+        viewerSourceURL = nil
     }
 
     public func setFit(_ fit: ViewerFit, screenLongEdge: Int) {
@@ -560,11 +565,18 @@ public final class BrowserModel {
 
     private func refreshViewer() {
         guard let current = catalog.selectedFile else { return }
+        rememberViewerSourceSize(for: current.url)
         let items = catalog.filtered
         let index = items.firstIndex(where: { $0.url == current.url })
         let previous = index.flatMap { $0 > 0 ? items[$0 - 1] : nil }
         let next = index.flatMap { $0 + 1 < items.count ? items[$0 + 1] : nil }
         let pixels = PreviewMaxPixel.viewer(zoom: zoom, screenLongEdge: screenLongEdge)
         previews.showViewer(current: current, previous: previous, next: next, maxPixelSize: pixels)
+    }
+
+    private func rememberViewerSourceSize(for url: URL) {
+        if viewerSourceURL == url, viewerSourceSize != nil { return }
+        viewerSourceURL = url
+        viewerSourceSize = imageIO.pixelSize(url: url)
     }
 }

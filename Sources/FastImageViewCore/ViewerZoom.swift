@@ -51,6 +51,48 @@ public struct ImagePan: Equatable, Sendable {
     }
 }
 
+public struct ImagePixelSize: Equatable, Sendable {
+    public var width: Int
+    public var height: Int
+
+    public init(width: Int, height: Int) {
+        self.width = width
+        self.height = height
+    }
+
+    /// ImageIO pixel width/height are storage pixels; orientations 5–8 display swapped, matching thumbnails created with transform.
+    public static func oriented(width: Int, height: Int, orientation: Int) -> ImagePixelSize {
+        switch orientation {
+        case 5, 6, 7, 8:
+            return ImagePixelSize(width: height, height: width)
+        default:
+            return ImagePixelSize(width: width, height: height)
+        }
+    }
+}
+
+/// Layout uses the file's true pixels when known, so a larger decode does not change the frame.
+public enum ViewerImageSizing {
+    public static func layoutSize(
+        decodedWidth: Int,
+        decodedHeight: Int,
+        source: ImagePixelSize?
+    ) -> ImagePixelSize {
+        if let source, source.width > 0, source.height > 0 {
+            return source
+        }
+        return ImagePixelSize(width: decodedWidth, height: decodedHeight)
+    }
+
+    public static func isUpscalingPreview(
+        decodedWidth: Int,
+        decodedHeight: Int,
+        layout: ImagePixelSize
+    ) -> Bool {
+        decodedWidth < layout.width || decodedHeight < layout.height
+    }
+}
+
 public enum ZoomMath {
     public static let minimum = 0.05
     public static let maximum = 8.0
