@@ -10,6 +10,7 @@ private final class ScriptedScanner: FolderScanning {
 
 private final class RecordingPipeline: PreviewPipeline {
     var generation = 0
+    var onGenerationChange: (() -> Void)?
     var resetCount = 0
     var cancelled: [URL] = []
     var viewerCurrents: [URL] = []
@@ -177,5 +178,40 @@ final class BrowserModelTests: XCTestCase {
         XCTAssertEqual(model.catalog.keyword, "jpg")
         XCTAssertEqual(model.catalog.selectedFile?.filename, "a-renamed.jpg")
         XCTAssertEqual(pipeline.cancelled, [files[0].url])
+    }
+
+    func testScanningFlagFollowsTheLatestGeneration() {
+        let (model, _, _) = model(files: [])
+        let old = model.beginOpening(folder: URL(fileURLWithPath: "/old"))
+        XCTAssertTrue(model.isScanning)
+        let new = model.beginOpening(folder: URL(fileURLWithPath: "/new"))
+        model.acceptScan(generation: old, outcome: .success([]))
+        XCTAssertTrue(model.isScanning)
+        model.acceptScan(generation: new, outcome: .success([]))
+        XCTAssertFalse(model.isScanning)
+        XCTAssertEqual(model.folderURL, URL(fileURLWithPath: "/new"))
+    }
+
+    func testListingRevisionOnlyChangesWhenFilesChange() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _, _) = model(files: files)
+        let generation = model.beginOpen()
+        model.pendingFolderURL = URL(fileURLWithPath: "/pics")
+        model.acceptScan(generation: generation, outcome: .success(files))
+        let revision = model.listingRevision
+
+        model.applyFolderListing(files, identityByPath: [:])
+        XCTAssertEqual(model.listingRevision, revision)
+
+        model.applyFolderListing(files + [file("c.jpg")], identityByPath: [:])
+        XCTAssertEqual(model.listingRevision, revision + 1)
+    }
+
+    func testRenderGenerationFollowsPipelineChanges() {
+        let (model, pipeline, _) = model(files: [])
+        XCTAssertEqual(model.renderGeneration, 0)
+        pipeline.generation = 7
+        pipeline.onGenerationChange?()
+        XCTAssertEqual(model.renderGeneration, 7)
     }
 }

@@ -67,6 +67,7 @@ private final class EmptyTrash: TrashStorage {
 
 private final class EmptyPipeline: PreviewPipeline {
     var generation = 0
+    var onGenerationChange: (() -> Void)?
     func reset() {}
     func cancel(url: URL) {}
     func requestThumbnail(file: ImageFile) {}

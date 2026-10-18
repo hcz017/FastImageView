@@ -10,13 +10,18 @@ struct ContentView: View {
     @State private var scroll = ScrollAccumulator()
     @State private var hoveredURL: URL?
     @State private var viewerHovered = false
+    @State private var retainedViewerImage: CGImage?
     @StateObject private var toasts = ToastModel()
 
     var body: some View {
         VStack(spacing: 0) {
             switch model.mode {
             case .noFolder:
-                empty
+                if model.isScanning {
+                    loadingState
+                } else {
+                    empty
+                }
             case .grid, .viewer:
                 if model.mode == .grid {
                     filterBar
@@ -35,9 +40,10 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.18), value: toasts.current?.id)
         .onChange(of: model.folderURL) { _, _ in
             toasts.dismiss()
+            retainedViewerImage = nil
         }
-        .onReceive(Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()) { _ in
-            model.syncPreviewGeneration()
+        .onChange(of: model.listingRevision) { _, _ in
+            toasts.show("列表已更新", canUndo: false)
         }
         .background {
             EventMonitor(
@@ -59,6 +65,19 @@ struct ContentView: View {
     }
 
     // MARK: - 空状态（未打开文件夹）
+
+    private var loadingState: some View {
+        VStack(spacing: theme.spacingMD) {
+            ProgressView()
+                .controlSize(.large)
+            Text("正在读取文件夹…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.regularMaterial)
+        .accessibilityElement(children: .combine)
+    }
 
     private var empty: some View {
         GeometryReader { proxy in
@@ -155,6 +174,13 @@ struct ContentView: View {
             formatMenu
 
             Spacer(minLength: theme.spacingSM)
+
+            if model.isScanning {
+                ProgressView()
+                    .controlSize(.small)
+                    .help("正在读取文件夹…")
+                    .accessibilityLabel("正在读取文件夹")
+            }
 
             folderInfo
 
@@ -453,6 +479,16 @@ struct ContentView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 viewerBar(file)
             }
+            .onChange(of: file.url) { _, _ in
+                if let image = model.cachedViewerImage(file) {
+                    retainedViewerImage = image
+                }
+            }
+            .onChange(of: model.renderGeneration) { _, _ in
+                if let image = model.cachedViewerImage(file) {
+                    retainedViewerImage = image
+                }
+            }
     }
 
     @ViewBuilder
@@ -504,6 +540,13 @@ struct ContentView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+            if model.fit == .actual, let image = model.cachedViewerImage(file) {
+                Text("\(image.width)×\(image.height)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .help(file.format.isRaw ? "原片显示的是内嵌预览尺寸" : "图片像素尺寸")
+            }
             Spacer()
             Picker("显示方式", selection: fitMode) {
                 Text("适合窗口").tag(ViewerFit.fit)
@@ -551,15 +594,30 @@ struct ContentView: View {
             StatePlaceholder(icon: "exclamationmark.triangle", message: "无法打开")
                 .onAppear { model.noteUnavailable(file.url) }
         } else if let image = model.cachedViewerImage(file) {
-            if model.fit == .actual {
-                ScrollView([.horizontal, .vertical]) {
-                    Image(decorative: image, scale: 1)
+            Group {
+                if model.fit == .actual {
+                    ScrollView([.horizontal, .vertical]) {
+                        Image(decorative: image, scale: 1)
+                            .onTapGesture(count: 2) { toggleFit() }
+                    }
+                } else {
+                    Image(decorative: image, scale: 1).resizable().scaledToFit()
+                        .padding(theme.spacingLG)
                         .onTapGesture(count: 2) { toggleFit() }
                 }
-            } else {
-                Image(decorative: image, scale: 1).resizable().scaledToFit()
-                    .padding(theme.spacingLG)
-                    .onTapGesture(count: 2) { toggleFit() }
+            }
+            .onAppear { retainedViewerImage = image }
+        } else if let retained = retainedViewerImage {
+            ZStack {
+                Image(decorative: retained, scale: 1)
+                    .resizable()
+                    .scaledToFit()
+                    .opacity(0.55)
+                ProgressView()
+                    .controlSize(.small)
+                    .padding(theme.spacingSM)
+                    .background(.regularMaterial, in: Capsule())
+                    .accessibilityLabel("正在加载")
             }
         } else {
             StatePlaceholder(icon: "photo", message: "加载中…")
@@ -886,7 +944,7 @@ private struct EventMonitor: NSViewRepresentable {
 
         func handleScrollWheel(_ event: NSEvent) -> NSEvent? {
             guard let model, let scroll, model.mode == .viewer else { return event }
-            if model.fit == .actual && event.hasPreciseScrollingDeltas {
+            if model.fit == .actual {
                 return event
             }
             let raw = specDeltas(

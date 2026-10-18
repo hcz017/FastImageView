@@ -50,7 +50,10 @@ public struct PreviewDecodeWriteDecision: Equatable, Sendable {
 
 @MainActor
 public final class LivePreviewPipeline: PreviewPipeline {
-    public private(set) var generation = 0
+    public var onGenerationChange: (() -> Void)?
+    public private(set) var generation = 0 {
+        didSet { onGenerationChange?() }
+    }
     private var scheduler = PreviewScheduler()
     private let thumbnails = ImageByteCache(byteLimit: CacheBudget.thumbnailBytes)
     private let viewers = ImageByteCache(byteLimit: CacheBudget.viewerBytes)

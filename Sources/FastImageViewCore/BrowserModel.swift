@@ -14,6 +14,7 @@ public struct UndoEntry: Equatable, Sendable {
 @MainActor
 public protocol PreviewPipeline: AnyObject {
     var generation: Int { get }
+    var onGenerationChange: (() -> Void)? { get set }
     func reset()
     func cancel(url: URL)
     func requestThumbnail(file: ImageFile)
@@ -37,6 +38,8 @@ public final class BrowserModel {
     public private(set) var screenLongEdge = 1800
     public private(set) var renderGeneration = 0
     public private(set) var generation = 0
+    public private(set) var isScanning = false
+    public private(set) var listingRevision = 0
     public private(set) var recentFolders: [URL]
     private var recentList: RecentFolderList
     private let recentDefaults: UserDefaults?
@@ -64,6 +67,11 @@ public final class BrowserModel {
         self.recentFolders = recentFolders.urls
         self.recentDefaults = recentDefaults
         self.folderWatch = folderWatch
+        self.renderGeneration = previews.generation
+        previews.onGenerationChange = { [weak self] in
+            guard let self else { return }
+            self.renderGeneration = self.previews.generation
+        }
     }
 
     public static func live() -> BrowserModel {
@@ -80,14 +88,18 @@ public final class BrowserModel {
 
     public func beginOpen() -> Int {
         generation += 1
+        isScanning = true
         return generation
     }
 
     public func open(folder: URL, selecting file: URL? = nil, screenLongEdge: Int? = nil) {
         let token = beginOpening(folder: folder, selecting: file, screenLongEdge: screenLongEdge)
-        Task {
-            let outcome = Result { try self.scanner.scan(folder: folder) }
-            await MainActor.run { self.acceptScan(generation: token, outcome: outcome) }
+        let scanner = self.scanner
+        Task.detached(priority: .userInitiated) {
+            let outcome = Result { try scanner.scan(folder: folder) }
+            await MainActor.run { [weak self] in
+                self?.acceptScan(generation: token, outcome: outcome)
+            }
         }
     }
 
@@ -114,6 +126,7 @@ public final class BrowserModel {
 
     public func acceptScan(generation: Int, outcome: Result<[ImageFile], Error>) {
         guard generation == self.generation else { return }
+        isScanning = false
         switch outcome {
         case .failure(let error):
             pendingSelectionURL = nil
@@ -162,6 +175,7 @@ public final class BrowserModel {
         let renamed = renamedSelection(selectedPath: selectedPath, oldToken: oldToken, files: files, identityByPath: identityByPath)
         catalog.refresh(with: files, renamedSelection: renamed)
         fileIdentity = identityByPath
+        listingRevision += 1
         for url in oldURLs.subtracting(files.map(\.url)) {
             previews.cancel(url: url)
         }
@@ -197,7 +211,12 @@ public final class BrowserModel {
             try? await Task.sleep(nanoseconds: 200_000_000)
             guard !Task.isCancelled, let folder else { return }
             guard self.folderURL == folder, self.generation == token else { return }
-            switch Result(catching: { try self.scanner.scan(folder: folder) }) {
+            let scanner = self.scanner
+            let outcome = await Task.detached(priority: .utility) {
+                Result { try scanner.scan(folder: folder) }
+            }.value
+            guard !Task.isCancelled, self.folderURL == folder, self.generation == token else { return }
+            switch outcome {
             case .failure(let error):
                 self.statusMessage = error.localizedDescription
             case .success(let files):
@@ -317,10 +336,6 @@ public final class BrowserModel {
             catalog = next
         }
         previews.cancel(url: url)
-    }
-
-    public func syncPreviewGeneration() {
-        if renderGeneration != previews.generation { renderGeneration = previews.generation }
     }
 
     public func cachedThumbnail(_ file: ImageFile) -> CGImage? {
