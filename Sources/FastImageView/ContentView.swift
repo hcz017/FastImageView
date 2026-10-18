@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var dropTargeted = false
     @State private var panOrigin: ImagePan?
     @State private var gridColumns = 1
+    @State private var pendingSearchFocus = false
     @StateObject private var toasts = ToastModel()
 
     var body: some View {
@@ -82,6 +83,14 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .copyPathsRequested)) { _ in
             copySelectionPaths()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusSearchRequested)) { _ in
+            focusSearch()
+        }
+        .onChange(of: model.mode) { _, mode in
+            guard pendingSearchFocus, mode == .grid else { return }
+            pendingSearchFocus = false
+            DispatchQueue.main.async { focusSearchField() }
         }
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             guard providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else {
@@ -592,6 +601,29 @@ struct ContentView: View {
         Clipboard.copyPaths(paths)
     }
 
+    private func focusSearch() {
+        guard model.mode != .noFolder else { return }
+        if model.mode == .viewer {
+            pendingSearchFocus = true
+            model.closeViewer()
+            return
+        }
+        DispatchQueue.main.async { focusSearchField() }
+    }
+
+    private func focusSearchField() {
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return }
+        if let field = SearchFieldFinder.find(in: window) {
+            window.makeFirstResponder(field)
+            return
+        }
+        DispatchQueue.main.async {
+            guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
+                  let field = SearchFieldFinder.find(in: window) else { return }
+            window.makeFirstResponder(field)
+        }
+    }
+
     private func copyImage(at url: URL) {
         guard Clipboard.copyImage(at: url) else {
             model.statusMessage = "无法拷贝这张图片"
@@ -1079,6 +1111,9 @@ private struct EventMonitor: NSViewRepresentable {
                 return nil
             case .moveRow(let rows):
                 model.moveSelection(byRows: rows, columns: gridColumns, screenLongEdge: screenLongEdge())
+                return nil
+            case .focusSearch:
+                NotificationCenter.default.post(name: .focusSearchRequested, object: nil)
                 return nil
             case .openViewer:
                 NSApp.keyWindow?.makeFirstResponder(nil)

@@ -30,6 +30,11 @@ struct FastImageViewApp: App {
                     .keyboardShortcut("o")
             }
             CommandGroup(after: .newItem) {
+                Button("搜索文件名") {
+                    NotificationCenter.default.post(name: .focusSearchRequested, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(model.mode == .noFolder)
                 Menu("打开最近") {
                     ForEach(model.recentFolders, id: \.path) { url in
                         Button(url.lastPathComponent) { model.open(folder: url) }
@@ -120,6 +125,7 @@ extension Notification.Name {
     static let undoTrashRequested = Notification.Name("FastImageView.undoTrashRequested")
     static let copyImageRequested = Notification.Name("FastImageView.copyImageRequested")
     static let copyPathsRequested = Notification.Name("FastImageView.copyPathsRequested")
+    static let focusSearchRequested = Notification.Name("FastImageView.focusSearchRequested")
 }
 
 @MainActor
@@ -130,6 +136,7 @@ func showShortcutsHelp() {
     ⌘O  打开文件夹
     ← →  上一张 / 下一张
     ↑ ↓  在网格中按行移动
+    ⌘F  搜索文件名
     空格  打开 / 关闭大图
     0 / 1  适合窗口 / 实际像素
     ⌘+ / ⌘−  放大 / 缩小
