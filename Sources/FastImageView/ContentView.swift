@@ -573,6 +573,7 @@ struct ContentView: View {
         }
         resignSearchFocus()
         let copy = copySet(for: file)
+        let canOpenViewer = model.catalog.deletionTargets.count <= 1
         let model = self.model
         let toasts = self.toasts
         let target = ContextMenuTarget()
@@ -597,7 +598,9 @@ struct ContentView: View {
 
         let menu = NSMenu()
         menu.autoenablesItems = false
-        addContextItem(menu, title: "在大图中打开", action: #selector(ContextMenuTarget.openAction(_:)), target: target)
+        if canOpenViewer {
+            addContextItem(menu, title: "在大图中打开", action: #selector(ContextMenuTarget.openAction(_:)), target: target)
+        }
         addContextItem(menu, title: "在访达中显示", action: #selector(ContextMenuTarget.revealAction(_:)), target: target)
         addContextItem(menu, title: "拷贝文件名", action: #selector(ContextMenuTarget.copyNameAction(_:)), target: target)
         addContextItem(menu, title: "拷贝图片", action: #selector(ContextMenuTarget.copyImageAction(_:)), target: target)
