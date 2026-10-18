@@ -15,6 +15,8 @@ struct ContentView: View {
     @State private var panOrigin: ImagePan?
     @State private var gridColumns = 1
     @State private var pendingSearchFocus = false
+    @State private var gifStarted = Date()
+    @StateObject private var gifClip = GIFClip()
     @StateObject private var toasts = ToastModel()
 
     var body: some View {
@@ -601,6 +603,16 @@ struct ContentView: View {
         Clipboard.copyPaths(paths)
     }
 
+    private func loadViewerDetails(_ file: ImageFile) async {
+        let url = file.url
+        if file.format == .gif {
+            gifStarted = Date()
+            gifClip.load(url: url, maxPixelSize: min(screenLongEdge(), GIFPlayback.maxPixel))
+        } else {
+            gifClip.clear()
+        }
+    }
+
     private func focusSearch() {
         guard model.mode != .noFolder else { return }
         if model.mode == .viewer {
@@ -657,8 +669,12 @@ struct ContentView: View {
                 viewerNavButton(previous: false, file: file)
             }
             .onHover { viewerHovered = $0 }
+            .task(id: file.url) {
+                await loadViewerDetails(file)
+            }
             .onChange(of: file.url) { _, _ in
                 panOrigin = nil
+                gifStarted = Date()
                 if let image = model.cachedViewerImage(file) {
                     retainedViewerImage = image
                 }
@@ -714,6 +730,8 @@ struct ContentView: View {
         } else if model.failed(file.url) {
             StatePlaceholder(icon: "exclamationmark.triangle", message: "无法打开")
                 .onAppear { model.noteUnavailable(file.url) }
+        } else if file.format == .gif, gifClip.url == file.url, gifClip.frames.count > 1 {
+            animatedGIF(gifClip.frames, delays: gifClip.delays)
         } else if let image = model.cachedViewerImage(file) {
             zoomableImage(image, dimmed: false)
                 .onAppear { retainedViewerImage = image }
@@ -728,6 +746,19 @@ struct ContentView: View {
             }
         } else {
             StatePlaceholder(icon: "photo", message: "加载中…")
+        }
+    }
+
+    private func animatedGIF(_ frames: [CGImage], delays: [Double]) -> some View {
+        let sample = frames[0]
+        return zoomCanvas(imageWidth: Double(sample.width), imageHeight: Double(sample.height)) { metrics in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                let index = GIFPlayback.index(
+                    elapsed: context.date.timeIntervalSince(gifStarted),
+                    delays: delays
+                )
+                placedImage(frames[min(index, frames.count - 1)], metrics: metrics, dimmed: false)
+            }
         }
     }
 

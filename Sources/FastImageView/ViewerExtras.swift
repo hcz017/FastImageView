@@ -1,4 +1,33 @@
 import AppKit
+import SwiftUI
+import FastImageViewCore
+
+@MainActor
+final class GIFClip: ObservableObject {
+    @Published private(set) var url: URL?
+    @Published private(set) var frames: [CGImage] = []
+    @Published private(set) var delays: [Double] = []
+
+    func clear() {
+        url = nil
+        frames = []
+        delays = []
+    }
+
+    func load(url: URL, maxPixelSize: Int) {
+        self.url = url
+        frames = []
+        delays = []
+        Task.detached(priority: .userInitiated) {
+            let decoded = GIFDecoder.decode(url: url, maxPixelSize: maxPixelSize)
+            await MainActor.run {
+                guard self.url == url else { return }
+                self.frames = decoded?.frames ?? []
+                self.delays = decoded?.delays ?? []
+            }
+        }
+    }
+}
 
 enum SearchFieldFinder {
     static func find(in window: NSWindow) -> NSTextField? {
