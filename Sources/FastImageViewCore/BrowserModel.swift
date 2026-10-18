@@ -7,8 +7,13 @@ public protocol FolderScanning {
 }
 
 public struct UndoEntry: Equatable, Sendable {
-    public var file: ImageFile
-    public var trashURL: URL
+    public var files: [ImageFile]
+    public var trashURLs: [URL]
+
+    public init(files: [ImageFile], trashURLs: [URL]) {
+        self.files = files
+        self.trashURLs = trashURLs
+    }
 }
 
 @MainActor
@@ -292,10 +297,9 @@ public final class BrowserModel {
         leaveViewerIfNeeded()
     }
 
-    public func select(url: URL) {
+    public func select(url: URL, gesture: SelectionGesture = .only) {
         var next = catalog
-        guard next.filtered.contains(where: { $0.url == url }) else { return }
-        next.selectionID = url
+        next.applySelection(url: url, gesture: gesture)
         catalog = next
     }
 
@@ -395,40 +399,74 @@ public final class BrowserModel {
     }
 
     public func deleteSelected() {
-        guard let selected = catalog.selectedFile else { return }
-        do {
-            let trashed = try deletion.trash(url: selected.url)
-            undoStack.append(UndoEntry(file: selected, trashURL: trashed.trashURL))
-            applyRemoval()
-            previews.cancel(url: selected.url)
-        } catch DeletionError.missing {
-            applyRemoval()
-            previews.cancel(url: selected.url)
-        } catch {
-            statusMessage = error.localizedDescription
+        let targets = mode == .viewer
+            ? (catalog.selectedFile.map { [$0] } ?? [])
+            : catalog.deletionTargets
+        guard !targets.isEmpty else { return }
+        var trashedFiles: [ImageFile] = []
+        var trashURLs: [URL] = []
+        var removed: Set<URL> = []
+        for file in targets {
+            do {
+                let trashed = try deletion.trash(url: file.url)
+                trashedFiles.append(file)
+                trashURLs.append(trashed.trashURL)
+                removed.insert(file.url)
+            } catch DeletionError.missing {
+                removed.insert(file.url)
+            } catch {
+                statusMessage = error.localizedDescription
+                break
+            }
         }
+        if !trashedFiles.isEmpty {
+            undoStack.append(UndoEntry(files: trashedFiles, trashURLs: trashURLs))
+        }
+        guard !removed.isEmpty else { return }
+        var next = catalog
+        _ = next.remove(urls: removed)
+        catalog = next
+        for url in removed {
+            previews.cancel(url: url)
+        }
+        if mode == .viewer && catalog.selectedFile == nil { mode = .grid }
+        else if mode == .viewer { refreshViewer() }
     }
 
     public func undo() {
-        guard let entry = undoStack.popLast() else { return }
-        do {
-            try deletion.restore(TrashedFile(originalURL: entry.file.url, trashURL: entry.trashURL))
-            let previousSelection = catalog.selectionID
-            var next = catalog
-            next.restore(entry.file)
-            catalog = next
-            if mode == .viewer {
-                if catalog.filtered.contains(where: { $0.url == entry.file.url }) {
-                    refreshViewer()
-                } else if let previousSelection, catalog.filtered.contains(where: { $0.url == previousSelection }) {
-                    refreshViewer()
-                } else {
-                    mode = .grid
+        guard var entry = undoStack.popLast() else { return }
+        var restored: [ImageFile] = []
+        while !entry.files.isEmpty {
+            let file = entry.files.removeFirst()
+            let trashURL = entry.trashURLs.removeFirst()
+            do {
+                try deletion.restore(TrashedFile(originalURL: file.url, trashURL: trashURL))
+                restored.append(file)
+            } catch {
+                entry.files.insert(file, at: 0)
+                entry.trashURLs.insert(trashURL, at: 0)
+                undoStack.append(entry)
+                if !restored.isEmpty {
+                    var next = catalog
+                    next.restore(restored)
+                    catalog = next
                 }
+                statusMessage = error.localizedDescription
+                return
             }
-        } catch {
-            undoStack.append(entry)
-            statusMessage = error.localizedDescription
+        }
+        let previousSelection = catalog.selectionID
+        var next = catalog
+        next.restore(restored)
+        catalog = next
+        if mode == .viewer {
+            if catalog.selectedFile != nil {
+                refreshViewer()
+            } else if let previousSelection, catalog.filtered.contains(where: { $0.url == previousSelection }) {
+                refreshViewer()
+            } else {
+                mode = .grid
+            }
         }
     }
 
@@ -445,14 +483,11 @@ public final class BrowserModel {
         guard previews.didFail(url: url) else { return }
         guard !FileManager.default.fileExists(atPath: url.path) else { return }
         guard catalog.files.contains(where: { $0.url == url }) else { return }
-        if catalog.selectionID == url {
-            applyRemoval()
-        } else {
-            var next = catalog
-            next.files.removeAll { $0.url == url }
-            next.clampSelection()
-            catalog = next
-        }
+        var next = catalog
+        _ = next.remove(urls: [url])
+        catalog = next
+        if mode == .viewer && catalog.selectedFile == nil { mode = .grid }
+        else if mode == .viewer { refreshViewer() }
         previews.cancel(url: url)
     }
 
@@ -465,14 +500,6 @@ public final class BrowserModel {
     }
 
     public func failed(_ url: URL) -> Bool { previews.didFail(url: url) }
-
-    private func applyRemoval() {
-        var next = catalog
-        _ = next.removeSelected()
-        catalog = next
-        if mode == .viewer && catalog.selectedFile == nil { mode = .grid }
-        else if mode == .viewer { refreshViewer() }
-    }
 
     private func reclampPan() {
         guard let layout = viewerLayout else { return }

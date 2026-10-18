@@ -209,6 +209,25 @@ final class BrowserModelTests: XCTestCase {
         XCTAssertEqual(model.listingRevision, revision + 1)
     }
 
+    func testDeletingASelectionTrashesEveryFileAndUndoRestoresThem() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg")]
+        let (model, pipeline, trash) = model(files: files)
+        let generation = model.beginOpen()
+        model.pendingFolderURL = URL(fileURLWithPath: "/pics")
+        model.acceptScan(generation: generation, outcome: .success(files))
+        model.select(url: files[0].url)
+        model.select(url: files[1].url, gesture: .toggle)
+        model.deleteSelected()
+        XCTAssertEqual(model.catalog.files.map(\.filename), ["c.jpg"])
+        XCTAssertEqual(model.catalog.selectedFile?.filename, "c.jpg")
+        XCTAssertEqual(Set(pipeline.cancelled.map(\.lastPathComponent)), ["a.jpg", "b.jpg"])
+        XCTAssertFalse(trash.exists(files[0].url))
+        XCTAssertFalse(trash.exists(files[1].url))
+        model.undo()
+        XCTAssertEqual(model.catalog.deletionTargets.map(\.filename), ["a.jpg", "b.jpg"])
+        XCTAssertEqual(model.catalog.files.count, 3)
+    }
+
     func testLeavingFitRequestsAFullSizeDecode() {
         let files = [file("a.jpg")]
         let (model, pipeline, _) = model(files: files)

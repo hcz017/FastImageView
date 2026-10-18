@@ -60,10 +60,10 @@ final class ImageCatalogTests: XCTestCase {
     func testRemoveSelectsNextOrPrevious() {
         var catalog = ImageCatalog()
         catalog.files = [file("a.jpg", format: .jpeg), file("b.jpg", format: .jpeg), file("c.jpg", format: .jpeg)]
-        catalog.selectionID = catalog.files[0].url
+        catalog.applySelection(url: catalog.files[0].url, gesture: .only)
         _ = catalog.removeSelected()
         XCTAssertEqual(catalog.selectedFile?.filename, "b.jpg")
-        catalog.selectionID = catalog.files.last?.url
+        catalog.applySelection(url: catalog.files[catalog.files.count - 1].url, gesture: .only)
         _ = catalog.removeSelected()
         XCTAssertEqual(catalog.selectedFile?.filename, "b.jpg")
         _ = catalog.removeSelected()
@@ -92,6 +92,44 @@ final class ImageCatalogTests: XCTestCase {
         catalog.restore(nef)
         XCTAssertEqual(catalog.selectionID, jpg.url)
         XCTAssertEqual(catalog.files.map(\.filename), ["a.jpg", "b.nef"])
+    }
+
+    func testClickToggleAndShiftSelectARange() {
+        var catalog = ImageCatalog()
+        catalog.files = [
+            file("a.jpg", format: .jpeg),
+            file("b.jpg", format: .jpeg),
+            file("c.jpg", format: .jpeg),
+            file("d.jpg", format: .jpeg)
+        ]
+        catalog.applySelection(url: catalog.files[0].url, gesture: .only)
+        catalog.applySelection(url: catalog.files[2].url, gesture: .extend)
+        XCTAssertEqual(catalog.deletionTargets.map(\.filename), ["a.jpg", "b.jpg", "c.jpg"])
+        XCTAssertEqual(catalog.selectionID, catalog.files[2].url)
+
+        catalog.applySelection(url: catalog.files[1].url, gesture: .toggle)
+        XCTAssertEqual(catalog.deletionTargets.map(\.filename), ["a.jpg", "c.jpg"])
+        XCTAssertEqual(catalog.selectionID, catalog.files[2].url)
+
+        catalog.applySelection(url: catalog.files[3].url, gesture: .only)
+        XCTAssertEqual(catalog.deletionTargets.map(\.filename), ["d.jpg"])
+    }
+
+    func testRemovingARangeSelectsTheFollowingItemAndUndoRestoresTheSet() {
+        var catalog = ImageCatalog()
+        catalog.files = [
+            file("a.jpg", format: .jpeg),
+            file("b.jpg", format: .jpeg),
+            file("c.jpg", format: .jpeg),
+            file("d.jpg", format: .jpeg)
+        ]
+        catalog.applySelection(url: catalog.files[1].url, gesture: .only)
+        catalog.applySelection(url: catalog.files[2].url, gesture: .extend)
+        let removed = catalog.removeSelected()
+        XCTAssertEqual(removed.map(\.filename), ["b.jpg", "c.jpg"])
+        XCTAssertEqual(catalog.selectedFile?.filename, "d.jpg")
+        catalog.restore(removed)
+        XCTAssertEqual(catalog.deletionTargets.map(\.filename), ["b.jpg", "c.jpg"])
     }
 
     func testMoveDoesNotWrap() {

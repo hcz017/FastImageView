@@ -190,8 +190,8 @@ struct ContentView: View {
         } label: {
             Image(systemName: "trash")
         }
-        .help("移到废纸篓 (Delete)")
-        .accessibilityLabel("移到废纸篓")
+        .help(trashHelp)
+        .accessibilityLabel(trashHelp)
     }
 
     // MARK: - 空状态（未打开文件夹）
@@ -318,12 +318,23 @@ struct ContentView: View {
         return "格式 · \(selected.count)"
     }
 
+    private var trashHelp: String {
+        let count = model.catalog.deletionTargets.count
+        if count > 1 { return "将 \(count) 张移到废纸篓 (Delete)" }
+        return "移到废纸篓 (Delete)"
+    }
+
     private var folderCountText: String {
         let total = model.catalog.files.count
+        let count: String
         if model.catalog.keyword.isEmpty && model.catalog.selectedFormats.isEmpty {
-            return "\(total) 张"
+            count = "\(total) 张"
+        } else {
+            count = "\(model.catalog.filtered.count)/\(total) 张"
         }
-        return "\(model.catalog.filtered.count)/\(total) 张"
+        let selected = model.catalog.deletionTargets.count
+        if selected > 1 { return "已选 \(selected) · \(count)" }
+        return count
     }
 
     private func formatToggle(_ format: ImageFormat) -> Binding<Bool> {
@@ -392,7 +403,7 @@ struct ContentView: View {
     }
 
     private func cell(_ file: ImageFile) -> some View {
-        let selected = model.catalog.selectionID == file.url
+        let selected = isSelected(file)
         return VStack(spacing: theme.spacingSM) {
             ZStack {
                 theme.thumbnailPlaceholder
@@ -425,12 +436,21 @@ struct ContentView: View {
         .padding(theme.spacingXS)
         .contentShape(Rectangle())
         .background(selected ? theme.selectionFill : Color.clear, in: RoundedRectangle(cornerRadius: theme.radiusLarge))
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .overlay {
             ClickCountCatcher(
-                onClick: { clickCount in
+                onClick: { clickCount, flags in
                     resignSearchFocus()
-                    select(file)
-                    if clickCount >= 2 {
+                    let gesture: SelectionGesture
+                    if flags.contains(.command) {
+                        gesture = .toggle
+                    } else if flags.contains(.shift) {
+                        gesture = .extend
+                    } else {
+                        gesture = .only
+                    }
+                    model.select(url: file.url, gesture: gesture)
+                    if clickCount >= 2, gesture == .only {
                         model.openViewer(screenLongEdge: screenLongEdge())
                     }
                 },
@@ -448,8 +468,10 @@ struct ContentView: View {
         .onDisappear { model.thumbnailRelease(file) }
     }
 
-    private func select(_ file: ImageFile) {
-        model.select(url: file.url)
+    private func isSelected(_ file: ImageFile) -> Bool {
+        let ids = model.catalog.selectionIDs
+        if ids.isEmpty { return model.catalog.selectionID == file.url }
+        return ids.contains(file.url)
     }
 
     private func resignSearchFocus() {
@@ -457,7 +479,9 @@ struct ContentView: View {
     }
 
     private func makeContextMenu(for file: ImageFile) -> NSMenu {
-        model.select(url: file.url)
+        if !isSelected(file) {
+            model.select(url: file.url)
+        }
         resignSearchFocus()
         let model = self.model
         let toasts = self.toasts
@@ -762,15 +786,17 @@ private final class ToastModel: ObservableObject {
     func deleteSelection(in model: BrowserModel) {
         let before = model.catalog.files.count
         model.deleteSelected()
-        guard model.catalog.files.count < before else { return }
-        show("已移到废纸篓", canUndo: true)
+        let removed = before - model.catalog.files.count
+        guard removed > 0 else { return }
+        show(removed > 1 ? "已将 \(removed) 张移到废纸篓" : "已移到废纸篓", canUndo: true)
     }
 
     func undo(in model: BrowserModel) {
         let before = model.catalog.files.count
         model.undo()
-        guard model.catalog.files.count > before else { return }
-        show("已恢复", canUndo: false)
+        let restored = model.catalog.files.count - before
+        guard restored > 0 else { return }
+        show(restored > 1 ? "已恢复 \(restored) 张" : "已恢复", canUndo: false)
     }
 
     func show(_ message: String, canUndo: Bool) {
@@ -828,7 +854,7 @@ func screenLongEdge() -> Int {
 
 /// Captures AppKit `mouseDown` so `NSEvent.clickCount` distinguishes single vs double click immediately.
 private struct ClickCountCatcher: NSViewRepresentable {
-    var onClick: (Int) -> Void
+    var onClick: (Int, NSEvent.ModifierFlags) -> Void
     var onHover: (Bool) -> Void = { _ in }
     var makeMenu: (() -> NSMenu)? = nil
 
@@ -848,7 +874,7 @@ private struct ClickCountCatcher: NSViewRepresentable {
 }
 
 private final class ClickCountView: NSView {
-    var onClick: ((Int) -> Void)?
+    var onClick: ((Int, NSEvent.ModifierFlags) -> Void)?
     var onHover: ((Bool) -> Void)?
     var makeMenu: (() -> NSMenu)?
     private var hoverTracking: NSTrackingArea?
@@ -879,7 +905,7 @@ private final class ClickCountView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        onClick?(event.clickCount)
+        onClick?(event.clickCount, event.modifierFlags)
     }
 
     override func rightMouseDown(with event: NSEvent) {
