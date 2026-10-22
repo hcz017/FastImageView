@@ -564,7 +564,7 @@ struct ContentView: View {
             Clipboard.copyFilenames(copy.filenames)
         }
         target.onCopyImage = {
-            copyImage(at: copy.imageURL)
+            copyImages(copy.urls)
         }
         target.onCopyPath = {
             Clipboard.copyPaths(copy.paths)
@@ -580,7 +580,7 @@ struct ContentView: View {
         }
         addContextItem(menu, title: "在访达中显示", action: #selector(ContextMenuTarget.revealAction(_:)), target: target)
         addContextItem(menu, title: copy.filenames.count > 1 ? "拷贝 \(copy.filenames.count) 个文件名" : "拷贝文件名", action: #selector(ContextMenuTarget.copyNameAction(_:)), target: target)
-        addContextItem(menu, title: "拷贝图片", action: #selector(ContextMenuTarget.copyImageAction(_:)), target: target)
+        addContextItem(menu, title: copy.urls.count > 1 ? "拷贝 \(copy.urls.count) 张图片" : "拷贝图片", action: #selector(ContextMenuTarget.copyImageAction(_:)), target: target)
         addContextItem(menu, title: copy.paths.count > 1 ? "拷贝 \(copy.paths.count) 个路径" : "拷贝路径", action: #selector(ContextMenuTarget.copyPathAction(_:)), target: target)
         menu.addItem(.separator())
         addContextItem(menu, title: "移到废纸篓", action: #selector(ContextMenuTarget.trashAction(_:)), target: target)
@@ -606,7 +606,7 @@ struct ContentView: View {
                     NSWorkspace.shared.activateFileViewerSelecting([file.url])
                 }
                 Button("拷贝文件名") { Clipboard.copyFilenames([file.filename]) }
-                Button("拷贝图片") { copyImage(at: file.url) }
+                Button("拷贝图片") { copyImages([file.url]) }
                 Button("拷贝路径") { Clipboard.copyPaths([file.url.path]) }
                 Divider()
                 Button("移到废纸篓", role: .destructive) {
@@ -824,8 +824,9 @@ struct ContentView: View {
     }
 
     private func copyPrimaryImage() {
-        guard let file = model.catalog.selectedFile else { return }
-        copyImage(at: file.url)
+        let targets = model.catalog.deletionTargets
+        let urls = (targets.isEmpty ? model.catalog.selectedFile.map { [$0] } ?? [] : targets).map(\.url)
+        copyImages(urls)
     }
 
     private func copySelectionPaths() {
@@ -872,9 +873,9 @@ struct ContentView: View {
         }
     }
 
-    private func copyImage(at url: URL) {
-        guard Clipboard.copyImage(at: url) else {
-            model.statusMessage = "无法拷贝这张图片"
+    private func copyImages(_ urls: [URL]) {
+        guard Clipboard.copyImages(at: urls) else {
+            model.statusMessage = urls.count > 1 ? "无法拷贝这些图片" : "无法拷贝这张图片"
             return
         }
     }

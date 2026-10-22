@@ -12,10 +12,14 @@ public struct CopySet: Equatable, Sendable {
     public var filenames: [String] {
         paths.map { URL(fileURLWithPath: $0).lastPathComponent }
     }
+
+    public var urls: [URL] {
+        paths.map { URL(fileURLWithPath: $0) }
+    }
 }
 
 public enum CopyRouting {
-    /// Right-click copies the clicked image. Paths include the whole selection when the click is inside it.
+    /// 右键点在多选内时，路径/文件名/文件拷贝覆盖整个选区；图片位图仍以点击项为主。
     public static func make(clicked: URL, orderedSelection: [URL]) -> CopySet {
         let source = orderedSelection.contains(clicked) && orderedSelection.count > 1 ? orderedSelection : [clicked]
         return CopySet(imageURL: clicked, paths: source.map(\.path))
