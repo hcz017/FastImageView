@@ -9,7 +9,7 @@ enum Clipboard {
         copyImages(at: [url])
     }
 
-    /// 把图片文件放进剪贴板：可粘贴到访达文件夹；单张时额外提供 PNG/TIFF 方便贴进对话或文档。
+    /// 每张图各写一个剪贴板项：文件 URL（可粘贴到访达）+ PNG/TIFF（可粘贴到文档/对话）。
     @discardableResult
     static func copyImages(at urls: [URL]) -> Bool {
         let existing = urls
@@ -17,15 +17,12 @@ enum Clipboard {
             .filter { FileManager.default.fileExists(atPath: $0.path) }
         guard !existing.isEmpty else { return false }
 
+        let items = existing.compactMap(pasteboardItem(for:))
+        guard !items.isEmpty else { return false }
+
         let board = NSPasteboard.general
         board.clearContents()
-        // 文件 URL（含 NSFilenamesPboardType）才能粘贴到访达。
-        guard board.writeObjects(existing as [NSURL]) else { return false }
-
-        if existing.count == 1, let url = existing.first {
-            attachBitmapRepresentations(of: url, to: board)
-        }
-        return true
+        return board.writeObjects(items)
     }
 
     static func copyPaths(_ paths: [String]) {
@@ -43,22 +40,31 @@ enum Clipboard {
         board.setString(lines.joined(separator: "\n"), forType: .string)
     }
 
-    private static func attachBitmapRepresentations(of url: URL, to board: NSPasteboard) {
-        guard let image = image(at: url),
-              let tiff = image.tiffRepresentation,
-              !tiff.isEmpty else { return }
-        _ = board.setData(tiff, forType: .tiff)
-        if let rep = NSBitmapImageRep(data: tiff),
-           let png = rep.representation(using: .png, properties: [:]),
-           !png.isEmpty {
-            _ = board.setData(png, forType: .png)
+    private static func pasteboardItem(for url: URL) -> NSPasteboardItem? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+
+        let item = NSPasteboardItem()
+        item.setString(url.absoluteString, forType: .fileURL)
+
+        if let image = image(at: url),
+           let tiff = image.tiffRepresentation,
+           !tiff.isEmpty {
+            item.setData(tiff, forType: .tiff)
+            if let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]),
+               !png.isEmpty {
+                item.setData(png, forType: .png)
+            }
         }
+
         if let type = UTType(filenameExtension: url.pathExtension),
            type.conforms(to: .image),
            let data = try? Data(contentsOf: url),
            !data.isEmpty {
-            _ = board.setData(data, forType: NSPasteboard.PasteboardType(type.identifier))
+            item.setData(data, forType: NSPasteboard.PasteboardType(type.identifier))
         }
+
+        return item
     }
 
     private static func image(at url: URL) -> NSImage? {
