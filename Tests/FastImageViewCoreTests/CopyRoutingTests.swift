@@ -17,6 +17,7 @@ final class CopyRoutingTests: XCTestCase {
         )
         XCTAssertEqual(set.imageURL, url("b.jpg"))
         XCTAssertEqual(set.paths, ["/pics/a.jpg", "/pics/b.jpg", "/pics/c.jpg"])
+        XCTAssertEqual(set.filenames, ["a.jpg", "b.jpg", "c.jpg"])
     }
 
     func testClickOutsideTheSelectionCopiesOnlyThatFile() {

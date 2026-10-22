@@ -7,16 +7,40 @@ enum Clipboard {
     @discardableResult
     static func copyImage(at url: URL) -> Bool {
         guard let image = image(at: url) else { return false }
+        guard let tiff = image.tiffRepresentation, !tiff.isEmpty else { return false }
+
         let board = NSPasteboard.general
         board.clearContents()
-        return board.writeObjects([image])
+        // 不要用 writeObjects([NSImage])：它通常只放 TIFF，很多应用粘贴需要 PNG。
+        var wrote = board.setData(tiff, forType: .tiff)
+        if let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]),
+           !png.isEmpty {
+            wrote = board.setData(png, forType: .png) || wrote
+        }
+        if let type = UTType(filenameExtension: url.pathExtension),
+           type.conforms(to: .image),
+           let data = try? Data(contentsOf: url),
+           !data.isEmpty {
+            let pasteType = NSPasteboard.PasteboardType(type.identifier)
+            wrote = board.setData(data, forType: pasteType) || wrote
+        }
+        return wrote
     }
 
     static func copyPaths(_ paths: [String]) {
-        guard !paths.isEmpty else { return }
+        copyLines(paths)
+    }
+
+    static func copyFilenames(_ names: [String]) {
+        copyLines(names)
+    }
+
+    private static func copyLines(_ lines: [String]) {
+        guard !lines.isEmpty else { return }
         let board = NSPasteboard.general
         board.clearContents()
-        board.setString(paths.joined(separator: "\n"), forType: .string)
+        board.setString(lines.joined(separator: "\n"), forType: .string)
     }
 
     private static func image(at url: URL) -> NSImage? {

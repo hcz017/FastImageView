@@ -8,6 +8,10 @@ public struct CopySet: Equatable, Sendable {
         self.imageURL = imageURL
         self.paths = paths
     }
+
+    public var filenames: [String] {
+        paths.map { URL(fileURLWithPath: $0).lastPathComponent }
+    }
 }
 
 public enum CopyRouting {

@@ -561,7 +561,7 @@ struct ContentView: View {
             NSWorkspace.shared.activateFileViewerSelecting([file.url])
         }
         target.onCopyName = {
-            copyFilename(file)
+            Clipboard.copyFilenames(copy.filenames)
         }
         target.onCopyImage = {
             copyImage(at: copy.imageURL)
@@ -579,7 +579,7 @@ struct ContentView: View {
             addContextItem(menu, title: "在大图中打开", action: #selector(ContextMenuTarget.openAction(_:)), target: target)
         }
         addContextItem(menu, title: "在访达中显示", action: #selector(ContextMenuTarget.revealAction(_:)), target: target)
-        addContextItem(menu, title: "拷贝文件名", action: #selector(ContextMenuTarget.copyNameAction(_:)), target: target)
+        addContextItem(menu, title: copy.filenames.count > 1 ? "拷贝 \(copy.filenames.count) 个文件名" : "拷贝文件名", action: #selector(ContextMenuTarget.copyNameAction(_:)), target: target)
         addContextItem(menu, title: "拷贝图片", action: #selector(ContextMenuTarget.copyImageAction(_:)), target: target)
         addContextItem(menu, title: copy.paths.count > 1 ? "拷贝 \(copy.paths.count) 个路径" : "拷贝路径", action: #selector(ContextMenuTarget.copyPathAction(_:)), target: target)
         menu.addItem(.separator())
@@ -594,11 +594,6 @@ struct ContentView: View {
         menu.addItem(item)
     }
 
-    private func copyFilename(_ file: ImageFile) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(file.filename, forType: .string)
-    }
-
     // MARK: - 查看器
 
     private func viewer(_ file: ImageFile) -> some View {
@@ -610,7 +605,7 @@ struct ContentView: View {
                 Button("在访达中显示") {
                     NSWorkspace.shared.activateFileViewerSelecting([file.url])
                 }
-                Button("拷贝文件名") { copyFilename(file) }
+                Button("拷贝文件名") { Clipboard.copyFilenames([file.filename]) }
                 Button("拷贝图片") { copyImage(at: file.url) }
                 Button("拷贝路径") { Clipboard.copyPaths([file.url.path]) }
                 Divider()
