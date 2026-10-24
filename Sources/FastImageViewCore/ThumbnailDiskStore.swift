@@ -126,22 +126,28 @@ public final class ThumbnailDiskStore: @unchecked Sendable {
     public func image(path: String, maxPixelSize: Int, modified: Date) -> CGImage? {
         let key = ThumbnailDiskKey.make(path: path, maxPixelSize: maxPixelSize, modified: modified)
         lock.lock()
-        defer { lock.unlock() }
-        guard let record = index.records[key] else { return nil }
-        let fileURL = directory.appendingPathComponent(record.fileName)
-        guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            if let fileName = index.remove(key: key) {
-                try? FileManager.default.removeItem(at: directory.appendingPathComponent(fileName))
-                persistLocked()
-            }
+        guard let record = index.records[key] else {
+            lock.unlock()
             return nil
         }
+        let fileURL = directory.appendingPathComponent(record.fileName)
         index.touch(key: key, at: Date())
         readsSinceFlush += 1
-        if readsSinceFlush >= Self.flushEveryReads {
+        let shouldFlush = readsSinceFlush >= Self.flushEveryReads
+        if shouldFlush { readsSinceFlush = 0 }
+        lock.unlock()
+
+        if shouldFlush {
+            lock.lock()
             persistLocked()
-            readsSinceFlush = 0
+            lock.unlock()
+        }
+
+        // ImageIO 解码放在锁外，否则磁盘命中的缩略图会被这个锁串行化。
+        guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            invalidate(key: key)
+            return nil
         }
         return image
     }
@@ -151,13 +157,12 @@ public final class ThumbnailDiskStore: @unchecked Sendable {
         let key = ThumbnailDiskKey.make(path: path, maxPixelSize: maxPixelSize, modified: modified)
         let fileName = key + ".jpg"
         let fileURL = directory.appendingPathComponent(fileName)
-        lock.lock()
-        defer { lock.unlock() }
         do {
             try data.write(to: fileURL, options: .atomic)
         } catch {
             return
         }
+        lock.lock()
         let doomed = index.remember(
             key: key,
             fileName: fileName,
@@ -165,24 +170,35 @@ public final class ThumbnailDiskStore: @unchecked Sendable {
             sourcePath: path,
             at: Date()
         )
+        persistLocked()
+        readsSinceFlush = 0
+        lock.unlock()
         let files = FileManager.default
         for name in doomed where name != fileName {
             try? files.removeItem(at: directory.appendingPathComponent(name))
         }
-        persistLocked()
-        readsSinceFlush = 0
     }
 
     public func remove(path: String) {
         lock.lock()
-        defer { lock.unlock() }
         let names = index.removeSource(path)
+        if !names.isEmpty { persistLocked() }
+        lock.unlock()
         guard !names.isEmpty else { return }
         let files = FileManager.default
         for name in names {
             try? files.removeItem(at: directory.appendingPathComponent(name))
         }
-        persistLocked()
+    }
+
+    private func invalidate(key: String) {
+        lock.lock()
+        let fileName = index.remove(key: key)
+        if fileName != nil { persistLocked() }
+        lock.unlock()
+        if let fileName {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(fileName))
+        }
     }
 
     public func flush() {
