@@ -27,8 +27,8 @@ struct AppTheme {
     let captureInfoMaxWidth: CGFloat = 250
 
     // MARK: 格式筛选菜单
-    /// 面板最小宽度。
-    let formatMenuWidth: CGFloat = 160
+    /// 面板最小宽度；格式徽标最长 4 个字符，够放下「全部格式」即可。
+    let formatMenuWidth: CGFloat = 120
     /// 入口按钮标题占位宽度，避免标题随筛选状态变化时工具栏抖动。
     let formatMenuTitleMinWidth: CGFloat = 72
     /// 行尾勾选列固定宽度，保证各行右边缘对齐。
