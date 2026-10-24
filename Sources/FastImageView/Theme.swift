@@ -26,6 +26,14 @@ struct AppTheme {
     /// 图片信息浮层按内容收窄，超长字段在此宽度内换行。
     let captureInfoMaxWidth: CGFloat = 250
 
+    // MARK: 格式筛选菜单
+    /// 面板最小宽度。
+    let formatMenuWidth: CGFloat = 160
+    /// 入口按钮标题占位宽度，避免标题随筛选状态变化时工具栏抖动。
+    let formatMenuTitleMinWidth: CGFloat = 72
+    /// 行尾勾选列固定宽度，保证各行右边缘对齐。
+    let menuCheckmarkWidth: CGFloat = 16
+
     // MARK: 颜色
     let thumbnailPlaceholder = Color.gray.opacity(0.15)
     let recentRowFill = Color.gray.opacity(0.08)

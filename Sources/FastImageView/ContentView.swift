@@ -15,6 +15,7 @@ struct ContentView: View {
     @State private var panOrigin: ImagePan?
     @State private var gridColumns = 1
     @State private var pendingSearchFocus = false
+    @State private var formatMenuPresented = false
     @State private var captureSummary = ""
     @State private var showCaptureInfo = false
     @State private var gifStarted = Date()
@@ -129,6 +130,7 @@ struct ContentView: View {
         }
         .onChange(of: model.mode) { _, mode in
             if mode != .grid {
+                formatMenuPresented = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
             }
         }
@@ -137,7 +139,8 @@ struct ContentView: View {
                 scroll: $scroll,
                 model: model,
                 toasts: toasts,
-                gridColumns: gridColumns
+                gridColumns: gridColumns,
+                formatMenuPresented: formatMenuPresented
             )
         }
         .alert("无法完成操作", isPresented: errorPresented) {
@@ -343,24 +346,46 @@ struct ContentView: View {
     // MARK: - 筛选栏
 
     private var formatMenu: some View {
-        Menu {
-            Button("全部格式") { clearFormats() }
-                .disabled(model.catalog.selectedFormats.isEmpty)
-            Divider()
-            ForEach(model.catalog.availableFormats, id: \.self) { format in
-                Toggle(isOn: formatToggle(format)) {
-                    Text(format.badge)
-                }
-            }
+        Button {
+            formatMenuPresented = true
         } label: {
             HStack(spacing: theme.spacingXS) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                 Text(formatMenuTitle)
+                    .frame(minWidth: theme.formatMenuTitleMinWidth, alignment: .leading)
             }
         }
         .fixedSize()
         .help("按格式筛选")
         .disabled(model.catalog.availableFormats.isEmpty)
+        .popover(isPresented: $formatMenuPresented) {
+            formatMenuContent
+        }
+        .accessibilityLabel("按格式筛选")
+        .accessibilityValue(formatMenuTitle)
+    }
+
+    private var formatMenuContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FormatMenuRow(
+                title: "全部格式",
+                checked: model.catalog.selectedFormats.isEmpty,
+                enabled: !model.catalog.selectedFormats.isEmpty,
+                action: clearFormats
+            )
+            Divider()
+                .padding(.vertical, theme.spacingXS)
+            ForEach(model.catalog.availableFormats, id: \.self) { format in
+                FormatMenuRow(
+                    title: format.badge,
+                    checked: model.catalog.selectedFormats.contains(format),
+                    enabled: true,
+                    action: { model.toggleFormat(format) }
+                )
+            }
+        }
+        .padding(theme.spacingXS)
+        .frame(minWidth: theme.formatMenuWidth, alignment: .leading)
     }
 
     private var formatMenuTitle: String {
@@ -387,13 +412,6 @@ struct ContentView: View {
         let selected = model.catalog.deletionTargets.count
         if selected > 1 { return "已选 \(selected) · \(count)" }
         return count
-    }
-
-    private func formatToggle(_ format: ImageFormat) -> Binding<Bool> {
-        Binding(
-            get: { model.catalog.selectedFormats.contains(format) },
-            set: { _ in model.toggleFormat(format) }
-        )
     }
 
     private func clearFormats() {
@@ -1007,6 +1025,42 @@ private final class ToastModel: ObservableObject {
     }
 }
 
+/// 格式筛选项：点击只切换勾选，不关闭面板。
+private struct FormatMenuRow: View {
+    @Environment(\.appTheme) private var theme
+    let title: String
+    let checked: Bool
+    let enabled: Bool
+    let action: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: theme.spacingSM) {
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: theme.spacingSM)
+                Image(systemName: "checkmark")
+                    .fontWeight(.semibold)
+                    .opacity(checked ? 1 : 0)
+                    .frame(width: theme.menuCheckmarkWidth, alignment: .trailing)
+            }
+            .padding(.horizontal, theme.spacingSM)
+            .padding(.vertical, theme.spacingXS)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: theme.radiusBadge)
+                    .fill(hovered && enabled ? theme.recentRowHoverFill : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .onHover { hovered = $0 }
+        .accessibilityValue(checked ? "已勾选" : "未勾选")
+    }
+}
+
 private struct RecentFolderRow: View {
     @Environment(\.appTheme) private var theme
     let url: URL
@@ -1187,6 +1241,7 @@ private struct EventMonitor: NSViewRepresentable {
     var model: BrowserModel
     var toasts: ToastModel
     var gridColumns: Int
+    var formatMenuPresented: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -1203,6 +1258,7 @@ private struct EventMonitor: NSViewRepresentable {
         context.coordinator.model = model
         context.coordinator.toasts = toasts
         context.coordinator.gridColumns = gridColumns
+        context.coordinator.formatMenuPresented = formatMenuPresented
         nsView.coordinator = context.coordinator
     }
 
@@ -1212,9 +1268,12 @@ private struct EventMonitor: NSViewRepresentable {
         var model: BrowserModel?
         var toasts: ToastModel?
         var gridColumns = 1
+        var formatMenuPresented = false
 
         func handleKeyDown(_ event: NSEvent) -> NSEvent? {
             guard let model else { return event }
+            // 格式面板打开时按键交给面板处理（Esc 关闭），不再驱动网格选择/打开/删除。
+            if formatMenuPresented { return event }
             let chord = KeyChord(
                 keyCode: event.keyCode,
                 command: event.modifierFlags.contains(.command),
