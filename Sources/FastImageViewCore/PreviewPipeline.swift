@@ -80,6 +80,7 @@ public final class LivePreviewPipeline: PreviewPipeline {
     private var queuedIDsByURL: [URL: Set<UUID>] = [:]
     private var wantedViewerURLs = Set<URL>()
     private var decodingThumbnails = Set<URL>()
+    private var generationUpdateScheduled = false
 
     public init(diskThumbnails: ThumbnailDiskStore? = nil) {
         self.diskThumbnails = diskThumbnails
@@ -266,10 +267,23 @@ public final class LivePreviewPipeline: PreviewPipeline {
                         } else {
                             self.failures.insert(job.url)
                         }
-                        self.generation += 1
+                        self.scheduleGenerationUpdate()
                     }
                     self.pump()
                 }
+            }
+        }
+    }
+
+    /// 一批解码完成只触发一次 SwiftUI 重绘，避免整屏 cell 随每张图重复重算。
+    private func scheduleGenerationUpdate() {
+        guard !generationUpdateScheduled else { return }
+        generationUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.generationUpdateScheduled = false
+                self.generation += 1
             }
         }
     }
