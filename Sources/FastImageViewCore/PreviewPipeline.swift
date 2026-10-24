@@ -71,7 +71,8 @@ public final class LivePreviewPipeline: PreviewPipeline {
     private let viewers = ImageByteCache(byteLimit: CacheBudget.viewerBytes)
     private let diskThumbnails: ThumbnailDiskStore?
     private let decoder = ImageIOThumbnailDecoder()
-    private var running = 0
+    private var runningThumbnails = 0
+    private var runningViewers = 0
     private var decodeEpoch = 0
     private var failures = Set<URL>()
     private var viewerPixels: [URL: Int] = [:]
@@ -136,21 +137,26 @@ public final class LivePreviewPipeline: PreviewPipeline {
             untrackQueued(id: job.id, url: job.url)
         }
 
-        var wanted: Set<URL> = [current.url]
-        if let previous { wanted.insert(previous.url) }
-        if let next { wanted.insert(next.url) }
+        let candidates = [current] + [previous, next].compactMap { $0 }
+        var wantedPixels: [URL: Int] = [:]
+        var jobs: [(file: ImageFile, pixels: Int, priority: PreviewPriority)] = []
+        for (index, file) in candidates.enumerated() {
+            let pixels = resolvedPixelSize(file: file, requested: maxPixelSize)
+            if viewers.image(url: file.url, maxPixelSize: pixels, modified: file.modificationDate) != nil {
+                viewerPixels[file.url] = pixels
+            } else if file.iCloudState != .notDownloaded {
+                wantedPixels[file.url] = pixels
+                jobs.append((file, pixels, index == 0 ? .current : .prefetch))
+            }
+        }
 
-        for job in scheduler.dropQueuedViewerJobs(keeping: wanted) {
+        for job in scheduler.dropQueuedViewerJobs(keeping: wantedPixels) {
             untrackQueued(id: job.id, url: job.url)
         }
-        wantedViewerURLs = wanted
+        wantedViewerURLs = Set(wantedPixels.keys)
 
-        enqueueViewer(current, maxPixelSize: resolvedPixelSize(file: current, requested: maxPixelSize), priority: .current)
-        if let previous {
-            enqueueViewer(previous, maxPixelSize: resolvedPixelSize(file: previous, requested: maxPixelSize), priority: .prefetch)
-        }
-        if let next {
-            enqueueViewer(next, maxPixelSize: resolvedPixelSize(file: next, requested: maxPixelSize), priority: .prefetch)
+        for job in jobs {
+            enqueueViewer(job.file, maxPixelSize: job.pixels, priority: job.priority)
         }
         pump()
     }
@@ -187,6 +193,10 @@ public final class LivePreviewPipeline: PreviewPipeline {
 
     private func enqueueViewer(_ file: ImageFile, maxPixelSize: Int, priority: PreviewPriority) {
         guard file.iCloudState != .notDownloaded else { return }
+        guard viewers.image(url: file.url, maxPixelSize: maxPixelSize, modified: file.modificationDate) == nil else {
+            viewerPixels[file.url] = maxPixelSize
+            return
+        }
         let id = scheduler.enqueue(url: file.url, maxPixelSize: maxPixelSize, priority: priority)
         trackQueued(id: id, url: file.url, modified: file.modificationDate)
     }
@@ -211,8 +221,8 @@ public final class LivePreviewPipeline: PreviewPipeline {
     }
 
     private func pump() {
-        while let job = scheduler.startNext(runningCount: running) {
-            running += 1
+        while let job = scheduler.startNext(thumbnailRunning: runningThumbnails, viewerRunning: runningViewers) {
+            if job.priority == .thumbnail { runningThumbnails += 1 } else { runningViewers += 1 }
             let modified = fileDates[job.id] ?? .distantPast
             untrackQueued(id: job.id, url: job.url)
             let priority = job.priority
@@ -235,8 +245,12 @@ public final class LivePreviewPipeline: PreviewPipeline {
                     disk?.store(path: path, maxPixelSize: job.maxPixelSize, modified: modified, image: image)
                 }
                 await MainActor.run {
-                    self.running -= 1
-                    if priority == .thumbnail { self.decodingThumbnails.remove(job.url) }
+                    if priority == .thumbnail {
+                        self.runningThumbnails -= 1
+                        self.decodingThumbnails.remove(job.url)
+                    } else {
+                        self.runningViewers -= 1
+                    }
                     let decision = PreviewDecodeWriteDecision.decide(
                         jobEpoch: epoch,
                         currentEpoch: self.decodeEpoch,

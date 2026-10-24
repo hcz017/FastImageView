@@ -8,15 +8,20 @@ final class PreviewSchedulerTests: XCTestCase {
         for index in 0..<6 {
             _ = scheduler.enqueue(url: folder.appendingPathComponent("\(index).jpg"), maxPixelSize: 400, priority: .thumbnail)
         }
-        var running = 0
-        while scheduler.startNext(runningCount: running) != nil { running += 1 }
-        XCTAssertEqual(running, 4)
+        var thumbnails = 0
+        while let job = scheduler.startNext(thumbnailRunning: thumbnails, viewerRunning: 0) {
+            XCTAssertEqual(job.priority, .thumbnail)
+            thumbnails += 1
+        }
+        XCTAssertEqual(thumbnails, PreviewScheduler.maxConcurrentThumbnails)
         scheduler.yieldQueuedThumbnails()
         let currentURL = folder.appendingPathComponent("current.jpg")
         _ = scheduler.enqueue(url: currentURL, maxPixelSize: 1800, priority: .current)
         _ = scheduler.enqueue(url: folder.appendingPathComponent("side.jpg"), maxPixelSize: 400, priority: .thumbnail)
-        running = 3
-        let next = scheduler.startNext(runningCount: running)
+        let next = scheduler.startNext(
+            thumbnailRunning: PreviewScheduler.maxConcurrentThumbnails,
+            viewerRunning: 0
+        )
         XCTAssertEqual(next?.url, currentURL)
         XCTAssertEqual(next?.priority, .current)
     }
@@ -27,7 +32,7 @@ final class PreviewSchedulerTests: XCTestCase {
         _ = scheduler.enqueue(url: folder.appendingPathComponent("t.jpg"), maxPixelSize: 400, priority: .thumbnail)
         let prefetch = folder.appendingPathComponent("p.jpg")
         _ = scheduler.enqueue(url: prefetch, maxPixelSize: 1800, priority: .prefetch)
-        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, prefetch)
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.url, prefetch)
     }
 
     func testDropQueuedViewerJobsKeepsWantedAndThumbnails() {
@@ -46,7 +51,7 @@ final class PreviewSchedulerTests: XCTestCase {
         _ = scheduler.enqueue(url: next, maxPixelSize: 1800, priority: .prefetch)
         _ = scheduler.enqueue(url: thumb, maxPixelSize: 400, priority: .thumbnail)
 
-        let wanted: Set<URL> = [current, previous, next]
+        let wanted: [URL: Int] = [current: 1800, previous: 1800, next: 1800]
         let removed = scheduler.dropQueuedViewerJobs(keeping: wanted)
 
         XCTAssertEqual(Set(removed.map(\.url)), Set([
@@ -55,12 +60,21 @@ final class PreviewSchedulerTests: XCTestCase {
         ]))
         XCTAssertTrue(removed.allSatisfy { $0.priority != .thumbnail })
 
-        var remaining: [PreviewJob] = []
-        while let job = scheduler.startNext(runningCount: remaining.count) {
-            remaining.append(job)
-        }
+        let remaining = drain(&scheduler)
         XCTAssertEqual(Set(remaining.map(\.url)), Set([current, previous, next, thumb]))
         XCTAssertTrue(remaining.contains { $0.url == thumb && $0.priority == .thumbnail })
+    }
+
+    func testDropQueuedViewerJobsDropsTheOldSizeForTheSameURL() {
+        var scheduler = PreviewScheduler()
+        let url = URL(fileURLWithPath: "/tmp/photo.jpg")
+        _ = scheduler.enqueue(url: url, maxPixelSize: 1800, priority: .prefetch)
+        _ = scheduler.enqueue(url: url, maxPixelSize: 4000, priority: .current)
+
+        let removed = scheduler.dropQueuedViewerJobs(keeping: [url: 4000])
+        XCTAssertEqual(removed.map(\.maxPixelSize), [1800])
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.maxPixelSize, 4000)
+        XCTAssertNil(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0))
     }
 
     func testNewestThumbnailRunsBeforeOlderOnes() {
@@ -70,8 +84,8 @@ final class PreviewSchedulerTests: XCTestCase {
         let newer = folder.appendingPathComponent("newer.jpg")
         _ = scheduler.enqueueThumbnailFirst(url: older, maxPixelSize: 400)
         _ = scheduler.enqueueThumbnailFirst(url: newer, maxPixelSize: 400)
-        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, newer)
-        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, older)
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.url, newer)
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.url, older)
     }
 
     func testRepeatedThumbnailRequestMovesItAhead() {
@@ -82,7 +96,7 @@ final class PreviewSchedulerTests: XCTestCase {
         _ = scheduler.enqueueThumbnailFirst(url: first, maxPixelSize: 400)
         _ = scheduler.enqueueThumbnailFirst(url: second, maxPixelSize: 400)
         _ = scheduler.enqueueThumbnailFirst(url: first, maxPixelSize: 400)
-        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, first)
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.url, first)
     }
 
     func testCancelQueuedThumbnailLeavesViewerJob() {
@@ -93,7 +107,7 @@ final class PreviewSchedulerTests: XCTestCase {
         _ = scheduler.enqueue(url: photo, maxPixelSize: 1800, priority: .current)
         let removed = scheduler.cancelQueuedThumbnails(url: photo)
         XCTAssertEqual(removed.map(\.priority), [.thumbnail])
-        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.priority, .current)
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.priority, .current)
     }
 
     func testYieldQueuedThumbnailsReturnsRemovedJobs() {
@@ -109,7 +123,34 @@ final class PreviewSchedulerTests: XCTestCase {
         let removed = scheduler.yieldQueuedThumbnails()
         XCTAssertEqual(Set(removed.map(\.url)), Set([a, b]))
         XCTAssertTrue(removed.allSatisfy { $0.priority == .thumbnail })
-        XCTAssertEqual(scheduler.startNext(runningCount: 0)?.url, viewer)
-        XCTAssertNil(scheduler.startNext(runningCount: 0))
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.url, viewer)
+        XCTAssertNil(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0))
+    }
+
+    func testRepeatedViewerRequestKeepsOneJob() {
+        var scheduler = PreviewScheduler()
+        let url = URL(fileURLWithPath: "/tmp/photo.jpg")
+        let first = scheduler.enqueue(url: url, maxPixelSize: 1800, priority: .prefetch)
+        let second = scheduler.enqueue(url: url, maxPixelSize: 1800, priority: .current)
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.priority, .current)
+        XCTAssertNil(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0))
+    }
+
+    private func drain(_ scheduler: inout PreviewScheduler) -> [PreviewJob] {
+        var jobs: [PreviewJob] = []
+        var thumbnails = 0
+        var viewers = 0
+        while let job = scheduler.startNext(thumbnailRunning: thumbnails, viewerRunning: viewers) {
+            jobs.append(job)
+            if job.priority == .thumbnail {
+                thumbnails += 1
+                if thumbnails == PreviewScheduler.maxConcurrentThumbnails { thumbnails = 0 }
+            } else {
+                viewers += 1
+                if viewers == PreviewScheduler.maxConcurrentViewers { viewers = 0 }
+            }
+        }
+        return jobs
     }
 }
