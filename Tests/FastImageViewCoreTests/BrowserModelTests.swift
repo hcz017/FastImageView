@@ -149,6 +149,38 @@ final class BrowserModelTests: XCTestCase {
         XCTAssertEqual(pipeline.viewerCurrents, [files[1].url])
     }
 
+    func testOpenImageFileShowsTheViewerBeforeTheFolderScanReturns() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let opened = root.appendingPathComponent("a.jpg")
+        try Data().write(to: opened)
+        let scanned = ImageFile(
+            url: opened,
+            filename: "a.jpg",
+            format: .jpeg,
+            modificationDate: .distantPast,
+            iCloudState: .notCloud
+        )
+
+        let scanner = ScriptedScanner()
+        scanner.result = .success([scanned])
+        let pipeline = RecordingPipeline()
+        let model = BrowserModel(
+            scanner: scanner,
+            deletion: DeletionService(storage: ModelTrash(files: [])),
+            previews: pipeline
+        )
+
+        model.openImageFile(opened, screenLongEdge: 1800)
+
+        XCTAssertEqual(model.mode, .viewer)
+        XCTAssertEqual(model.catalog.selectedFile?.url, opened.standardizedFileURL)
+        XCTAssertEqual(model.folderURL?.standardizedFileURL.path, root.standardizedFileURL.path)
+        XCTAssertEqual(pipeline.resetCount, 1)
+        XCTAssertEqual(pipeline.viewerCurrents.last, opened.standardizedFileURL)
+    }
+
     func testRefreshRemovesDeletedFileAndFollowsRename() {
         let files = [file("a.jpg"), file("b.jpg")]
         let (model, pipeline, _) = model(files: files)

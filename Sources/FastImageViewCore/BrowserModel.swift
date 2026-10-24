@@ -376,7 +376,47 @@ public final class BrowserModel {
         if isDirectory.boolValue {
             open(folder: file, screenLongEdge: screenLongEdge)
         } else {
-            open(folder: file.deletingLastPathComponent(), selecting: file, screenLongEdge: screenLongEdge)
+            openSingleImage(file, screenLongEdge: screenLongEdge)
+        }
+    }
+
+    /// 从访达打开单张图时先直接进 viewer，父目录扫描在后台补全列表。
+    private func openSingleImage(_ url: URL, screenLongEdge: Int) {
+        guard let file = FolderScanner.file(url: url) else {
+            open(folder: url.deletingLastPathComponent(), selecting: url, screenLongEdge: screenLongEdge)
+            return
+        }
+        self.screenLongEdge = screenLongEdge
+        let folder = url.deletingLastPathComponent()
+        pendingFolderURL = folder
+        pendingSelectionURL = url
+        pendingSelectionURLs = []
+        let token = beginOpen()
+        previews.reset()
+        undoStack.removeAll()
+        catalog.replaceFiles([file])
+        folderURL = folder
+        recentList.remember(folder)
+        recentFolders = recentList.urls
+        if let recentDefaults {
+            recentList.save(to: recentDefaults)
+        }
+        zoom = .fit
+        pan = .zero
+        openError = nil
+        select(url: file.url)
+        mode = .viewer
+        fileIdentity = FileIdentity.byPath([file])
+        pendingSelectionURL = nil
+        watchCurrentFolder()
+        refreshViewer()
+
+        let scanner = self.scanner
+        Task.detached(priority: .userInitiated) {
+            let outcome = Result { try scanner.scan(folder: folder) }
+            await MainActor.run { [weak self] in
+                self?.acceptDirectScan(generation: token, outcome: outcome)
+            }
         }
     }
 
@@ -458,6 +498,26 @@ public final class BrowserModel {
             pendingSelectionURLs = []
             fileIdentity = FileIdentity.byPath(files)
             watchCurrentFolder()
+        }
+    }
+
+    /// 单图直接打开后的后台扫描结果：只补全列表，不重置已显示的图、缩放和选中项。
+    private func acceptDirectScan(generation: Int, outcome: Result<[ImageFile], Error>) {
+        guard generation == self.generation else { return }
+        isScanning = false
+        switch outcome {
+        case .failure(let error):
+            statusMessage = error.localizedDescription
+        case .success(let files):
+            catalog.refresh(with: files)
+            fileIdentity = FileIdentity.byPath(files)
+            if mode == .viewer {
+                if catalog.selectedFile == nil {
+                    mode = .grid
+                } else {
+                    refreshViewer()
+                }
+            }
         }
     }
 
