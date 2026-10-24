@@ -18,7 +18,11 @@ public struct PreviewScheduler: Equatable, Sendable {
     public static let maxConcurrentThumbnails = 4
     public static let maxConcurrentViewers = 2
 
-    private var thumbnails: [PreviewJob] = []
+    /// 缩略图按请求时间追加，取任务时从尾部弹出，天然是“最新请求优先”。
+    /// 中间被取消或替换的任务留成 nil 占位，避免每次删除都搬动整个数组。
+    private var thumbnailJobs: [PreviewJob?] = []
+    private var thumbnailIndex: [UUID: Int] = [:]
+    private var thumbnailIDByURL: [URL: UUID] = [:]
     private var currentViewers: [PreviewJob] = []
     private var prefetchViewers: [PreviewJob] = []
 
@@ -39,15 +43,53 @@ public struct PreviewScheduler: Equatable, Sendable {
     }
 
     private mutating func enqueueThumbnail(url: URL, maxPixelSize: Int) -> UUID {
-        if let index = thumbnails.firstIndex(where: { $0.url == url }) {
-            var job = thumbnails.remove(at: index)
-            job.maxPixelSize = maxPixelSize
-            thumbnails.insert(job, at: 0)
-            return job.id
+        if let id = thumbnailIDByURL[url] {
+            removeThumbnail(id: id)
+            let job = PreviewJob(id: id, url: url, maxPixelSize: maxPixelSize, priority: .thumbnail)
+            appendThumbnail(job)
+            return id
         }
         let job = PreviewJob(id: UUID(), url: url, maxPixelSize: maxPixelSize, priority: .thumbnail)
-        thumbnails.insert(job, at: 0)
+        appendThumbnail(job)
         return job.id
+    }
+
+    private mutating func appendThumbnail(_ job: PreviewJob) {
+        thumbnailIndex[job.id] = thumbnailJobs.count
+        thumbnailJobs.append(job)
+        thumbnailIDByURL[job.url] = job.id
+    }
+
+    private mutating func removeThumbnail(id: UUID) {
+        guard let index = thumbnailIndex.removeValue(forKey: id),
+              let job = thumbnailJobs[index] else { return }
+        thumbnailJobs[index] = nil
+        if thumbnailIDByURL[job.url] == id {
+            thumbnailIDByURL.removeValue(forKey: job.url)
+        }
+        compactThumbnailJobsIfNeeded()
+    }
+
+    private mutating func popThumbnail() -> PreviewJob? {
+        while let candidate = thumbnailJobs.popLast() {
+            guard let job = candidate else { continue }
+            thumbnailIndex.removeValue(forKey: job.id)
+            if thumbnailIDByURL[job.url] == job.id {
+                thumbnailIDByURL.removeValue(forKey: job.url)
+            }
+            return job
+        }
+        return nil
+    }
+
+    private mutating func compactThumbnailJobsIfNeeded() {
+        guard thumbnailJobs.count > 64, thumbnailJobs.count > thumbnailIndex.count * 2 else { return }
+        let compacted: [PreviewJob] = thumbnailJobs.compactMap { $0 }
+        thumbnailJobs = compacted
+        thumbnailIndex.removeAll(keepingCapacity: true)
+        for (index, job) in compacted.enumerated() {
+            thumbnailIndex[job.id] = index
+        }
     }
 
     private mutating func enqueueViewer(url: URL, maxPixelSize: Int, priority: PreviewPriority) -> UUID {
@@ -78,15 +120,19 @@ public struct PreviewScheduler: Equatable, Sendable {
 
     @discardableResult
     public mutating func cancelQueuedThumbnails(url: URL) -> [PreviewJob] {
-        let removed = thumbnails.filter { $0.url == url }
-        thumbnails.removeAll { $0.url == url }
-        return removed
+        guard let id = thumbnailIDByURL[url],
+              let index = thumbnailIndex[id],
+              let job = thumbnailJobs[index] else { return [] }
+        removeThumbnail(id: id)
+        return [job]
     }
 
     @discardableResult
     public mutating func yieldQueuedThumbnails() -> [PreviewJob] {
-        let removed = thumbnails
-        thumbnails.removeAll()
+        let removed = thumbnailJobs.compactMap { $0 }
+        thumbnailJobs.removeAll(keepingCapacity: true)
+        thumbnailIndex.removeAll(keepingCapacity: true)
+        thumbnailIDByURL.removeAll(keepingCapacity: true)
         return removed
     }
 
@@ -101,7 +147,9 @@ public struct PreviewScheduler: Equatable, Sendable {
     }
 
     public mutating func cancel(url: URL) {
-        thumbnails.removeAll { $0.url == url }
+        if let id = thumbnailIDByURL[url] {
+            removeThumbnail(id: id)
+        }
         currentViewers.removeAll { $0.url == url }
         prefetchViewers.removeAll { $0.url == url }
     }
@@ -110,8 +158,8 @@ public struct PreviewScheduler: Equatable, Sendable {
         if viewerRunning < Self.maxConcurrentViewers, let job = popViewer() {
             return job
         }
-        if thumbnailRunning < Self.maxConcurrentThumbnails, !thumbnails.isEmpty {
-            return thumbnails.removeFirst()
+        if thumbnailRunning < Self.maxConcurrentThumbnails, let job = popThumbnail() {
+            return job
         }
         return nil
     }

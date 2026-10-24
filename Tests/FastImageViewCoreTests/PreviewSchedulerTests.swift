@@ -137,6 +137,35 @@ final class PreviewSchedulerTests: XCTestCase {
         XCTAssertNil(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0))
     }
 
+    func testCancellingAMiddleThumbnailLeavesTheNewestOrderIntact() {
+        var scheduler = PreviewScheduler()
+        let folder = URL(fileURLWithPath: "/tmp")
+        let old = folder.appendingPathComponent("old.jpg")
+        let middle = folder.appendingPathComponent("middle.jpg")
+        let newest = folder.appendingPathComponent("newest.jpg")
+        _ = scheduler.enqueueThumbnailFirst(url: old, maxPixelSize: 400)
+        _ = scheduler.enqueueThumbnailFirst(url: middle, maxPixelSize: 400)
+        _ = scheduler.enqueueThumbnailFirst(url: newest, maxPixelSize: 400)
+
+        _ = scheduler.cancelQueuedThumbnails(url: middle)
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.url, newest)
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.url, old)
+        XCTAssertNil(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0))
+    }
+
+    func testCancellingManyThumbnailsStillFindsTheLatestOne() {
+        var scheduler = PreviewScheduler()
+        let folder = URL(fileURLWithPath: "/tmp")
+        for index in 0..<100 {
+            _ = scheduler.enqueueThumbnailFirst(url: folder.appendingPathComponent("\(index).jpg"), maxPixelSize: 400)
+        }
+        for index in 0..<99 {
+            _ = scheduler.cancelQueuedThumbnails(url: folder.appendingPathComponent("\(index).jpg"))
+        }
+        XCTAssertEqual(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0)?.url, folder.appendingPathComponent("99.jpg"))
+        XCTAssertNil(scheduler.startNext(thumbnailRunning: 0, viewerRunning: 0))
+    }
+
     private func drain(_ scheduler: inout PreviewScheduler) -> [PreviewJob] {
         var jobs: [PreviewJob] = []
         var thumbnails = 0
