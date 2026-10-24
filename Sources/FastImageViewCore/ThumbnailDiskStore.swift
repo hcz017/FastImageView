@@ -144,8 +144,9 @@ public final class ThumbnailDiskStore: @unchecked Sendable {
         }
 
         // ImageIO 解码放在锁外，否则磁盘命中的缩略图会被这个锁串行化。
+        let options = [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
         guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+              let image = CGImageSourceCreateImageAtIndex(source, 0, options) else {
             invalidate(key: key)
             return nil
         }

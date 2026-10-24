@@ -15,6 +15,7 @@ final class PreviewSizingTests: XCTestCase {
         XCTAssertEqual(raw[kCGImageSourceCreateThumbnailFromImageAlways] as? Bool, true)
         XCTAssertEqual(raw[kCGImageSourceCreateThumbnailWithTransform] as? Bool, true)
         XCTAssertEqual(raw[kCGImageSourceThumbnailMaxPixelSize] as? Int, 400)
+        XCTAssertEqual(raw[kCGImageSourceShouldCacheImmediately] as? Bool, true)
         XCTAssertNil(raw[kCGImageSourceShouldAllowFloat] )
     }
 }
