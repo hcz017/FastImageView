@@ -51,6 +51,20 @@ public struct ImagePan: Equatable, Sendable {
     }
 }
 
+/// 对比模式共享平移：取所有格可移动范围的交集，保证任一格都不出现空白边缘。
+public enum ComparePan {
+    public static func clamped(x: Double, y: Double, layouts: [ViewerLayout]) -> ImagePan {
+        guard let maxX = layouts.map({ max(0, ($0.contentWidth - $0.viewportWidth) / 2) }).min(),
+              let maxY = layouts.map({ max(0, ($0.contentHeight - $0.viewportHeight) / 2) }).min() else {
+            return .zero
+        }
+        return ImagePan(
+            x: min(max(x, -maxX), maxX),
+            y: min(max(y, -maxY), maxY)
+        )
+    }
+}
+
 public struct ImagePixelSize: Equatable, Sendable {
     public var width: Int
     public var height: Int

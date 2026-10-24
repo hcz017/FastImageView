@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var retainedViewerImage: CGImage?
     @State private var dropTargeted = false
     @State private var panOrigin: ImagePan?
+    @State private var comparePanOrigin: ImagePan?
     @State private var gridColumns = 1
     @State private var pendingSearchFocus = false
     @State private var formatMenuPresented = false
@@ -40,6 +41,8 @@ struct ContentView: View {
                 if let file = model.catalog.selectedFile {
                     viewer(file)
                 }
+            case .compare:
+                compareView
             }
         }
         .frame(minWidth: 720, minHeight: 480)
@@ -47,9 +50,13 @@ struct ContentView: View {
         .navigationSubtitle(toolbarSubtitle)
         .toolbar {
             ToolbarItemGroup(placement: .navigation) {
-                if model.mode == .viewer {
+                if model.mode == .viewer || model.mode == .compare {
                     Button {
-                        model.closeViewer()
+                        if model.mode == .viewer {
+                            model.closeViewer()
+                        } else {
+                            model.closeCompare()
+                        }
                     } label: {
                         Label("返回", systemImage: "chevron.backward")
                     }
@@ -69,9 +76,10 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .primaryAction) {
                 gridToolbarItems
                 viewerToolbarItems
+                compareToolbarItems
             }
             ToolbarItem(placement: .destructiveAction) {
-                if model.mode != .noFolder, model.catalog.selectedFile != nil {
+                if model.mode != .noFolder, model.mode != .compare, model.catalog.selectedFile != nil {
                     trashButton
                 }
             }
@@ -165,6 +173,12 @@ struct ContentView: View {
         case .viewer:
             guard let file = model.catalog.selectedFile else { return "" }
             return viewerSubtitle(file)
+        case .compare:
+            var text = "已选 \(model.compareFiles.count) · 共 \(model.catalog.files.count) 张"
+            if model.compareZoom != .fit {
+                text += " · \(model.compareZoomLabel)"
+            }
+            return text
         case .noFolder:
             return ""
         }
@@ -189,6 +203,9 @@ struct ContentView: View {
                 ?? "FastImageView"
         case .grid:
             return model.folderURL?.lastPathComponent ?? "FastImageView"
+        case .compare:
+            let folder = model.folderURL?.lastPathComponent ?? "FastImageView"
+            return "对比 \(model.compareFiles.count) 张 · \(folder)"
         case .noFolder:
             return "FastImageView"
         }
@@ -199,6 +216,7 @@ struct ContentView: View {
         if model.mode == .grid {
             formatMenu
             ratingMenu
+            compareButton
             if model.isScanning {
                 ProgressView()
                     .controlSize(.small)
@@ -246,6 +264,76 @@ struct ContentView: View {
                 .accessibilityLabel("图片信息")
                 .accessibilityValue(showCaptureInfo ? "显示中" : "已隐藏")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var compareButton: some View {
+        let count = model.compareCandidateFiles.count
+        Button {
+            openCompare()
+        } label: {
+            Label(count == 2 || count == 3 ? "对比 \(count) 张" : "对比", systemImage: "rectangle.split.3x1")
+        }
+        .labelStyle(.titleAndIcon)
+        .fixedSize()
+        .disabled(!model.canOpenCompare)
+        .help("对比选中的 2–3 张图片 (P)")
+        .accessibilityLabel("对比选中的图片")
+    }
+
+    @ViewBuilder
+    private var compareToolbarItems: some View {
+        if model.mode == .compare, !model.compareFiles.isEmpty {
+            ControlGroup {
+                Button {
+                    model.zoomCompare(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                } label: {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .help("缩小 (⌘−)")
+                .accessibilityLabel("缩小")
+                Text(model.compareZoomLabel)
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 44)
+                    .accessibilityLabel("缩放 \(model.compareZoomLabel)")
+                Button {
+                    model.zoomCompare(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                } label: {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .help("放大 (⌘+)")
+                .accessibilityLabel("放大")
+            }
+            ControlGroup {
+                Toggle("适合窗口", isOn: compareFitToggle)
+                    .help("适合窗口")
+                Toggle("实际像素", isOn: compareActualToggle)
+                    .help("实际像素")
+            }
+        }
+    }
+
+    private var compareFitToggle: Binding<Bool> {
+        Binding(
+            get: { model.compareZoom == .fit },
+            set: { if $0 { model.setCompareFit(.fit, screenLongEdge: screenLongEdge()) } }
+        )
+    }
+
+    private var compareActualToggle: Binding<Bool> {
+        Binding(
+            get: {
+                if case .actual = model.compareZoom { return true }
+                return false
+            },
+            set: { if $0 { model.setCompareFit(.actual, screenLongEdge: screenLongEdge()) } }
+        )
+    }
+
+    private func openCompare() {
+        if !model.openCompare(screenLongEdge: screenLongEdge()) {
+            toasts.show("请选择 2 到 3 张图片进行对比", canUndo: false)
         }
     }
 
@@ -632,11 +720,17 @@ struct ContentView: View {
         resignSearchFocus()
         let copy = copySet(for: file)
         let canOpenViewer = model.catalog.deletionTargets.count <= 1
+        let compareCount = model.compareCandidateFiles.count
         let model = self.model
         let toasts = self.toasts
         let target = ContextMenuTarget()
         target.onOpen = {
             model.openViewer(screenLongEdge: screenLongEdge())
+        }
+        target.onCompare = {
+            if !model.openCompare(screenLongEdge: screenLongEdge()) {
+                toasts.show("请选择 2 到 3 张图片进行对比", canUndo: false)
+            }
         }
         target.onReveal = {
             NSWorkspace.shared.activateFileViewerSelecting([file.url])
@@ -664,6 +758,9 @@ struct ContentView: View {
         menu.autoenablesItems = false
         if canOpenViewer {
             addContextItem(menu, title: "在大图中打开", action: #selector(ContextMenuTarget.openAction(_:)), target: target)
+        }
+        if (2...3).contains(compareCount) {
+            addContextItem(menu, title: "对比 \(compareCount) 张", action: #selector(ContextMenuTarget.compareAction(_:)), target: target)
         }
         addContextItem(menu, title: "在访达中显示", action: #selector(ContextMenuTarget.revealAction(_:)), target: target)
         addContextItem(menu, title: copy.filenames.count > 1 ? "拷贝 \(copy.filenames.count) 个文件名" : "拷贝文件名", action: #selector(ContextMenuTarget.copyNameAction(_:)), target: target)
@@ -732,6 +829,159 @@ struct ContentView: View {
         item.target = target
         item.representedObject = target
         menu.addItem(item)
+    }
+
+    // MARK: - 对比
+
+    private var compareView: some View {
+        let _ = model.renderGeneration
+        return HStack(spacing: 0) {
+            ForEach(Array(model.compareFiles.enumerated()), id: \.element.url) { entry in
+                if entry.offset > 0 {
+                    Divider()
+                }
+                comparePane(file: entry.element, index: entry.offset)
+            }
+        }
+        .background(theme.viewerCanvas)
+    }
+
+    private func comparePane(file: ImageFile, index: Int) -> some View {
+        GeometryReader { geo in
+            let metrics = compareMetrics(file: file, viewport: geo.size)
+            ZStack {
+                compareContent(file, metrics: metrics.content)
+                    .frame(width: metrics.content.width, height: metrics.content.height)
+                    .offset(x: model.comparePan.x, y: model.comparePan.y)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
+            .contentShape(Rectangle())
+            .gesture(compareDrag)
+            .onTapGesture(count: 2) {
+                model.setCompareFit(model.compareZoom == .fit ? .actual : .fit, screenLongEdge: screenLongEdge())
+            }
+            .onTapGesture {
+                model.openViewerFromCompare(url: file.url, screenLongEdge: screenLongEdge())
+            }
+            .onAppear {
+                publishCompareLayout(file: file, metrics: metrics, viewport: geo.size)
+            }
+            .onChange(of: geo.size) { _, size in
+                publishCompareLayout(file: file, metrics: compareMetrics(file: file, viewport: size), viewport: size)
+            }
+            .onChange(of: model.compareZoom) { _, _ in
+                publishCompareLayout(file: file, metrics: compareMetrics(file: file, viewport: geo.size), viewport: geo.size)
+            }
+            .onChange(of: model.renderGeneration) { _, _ in
+                publishCompareLayout(file: file, metrics: compareMetrics(file: file, viewport: geo.size), viewport: geo.size)
+            }
+            .overlay(alignment: .bottom) {
+                compareLabel(file, index: index)
+            }
+            .contextMenu {
+                Button("在大图中打开") {
+                    model.openViewerFromCompare(url: file.url, screenLongEdge: screenLongEdge())
+                }
+                Button("在访达中显示") {
+                    NSWorkspace.shared.activateFileViewerSelecting([file.url])
+                }
+                Button("拷贝文件名") { Clipboard.copyFilenames([file.filename]) }
+                Button("拷贝图片") { copyImages([file.url]) }
+                Button("拷贝路径") { Clipboard.copyPaths([file.url.path]) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func compareContent(_ file: ImageFile, metrics: CGSize) -> some View {
+        if file.iCloudState == .notDownloaded {
+            StatePlaceholder(icon: "icloud.and.arrow.down", message: "未下载")
+                .frame(width: metrics.width, height: metrics.height)
+        } else if model.failed(file.url) {
+            StatePlaceholder(icon: "exclamationmark.triangle", message: "无法打开")
+                .frame(width: metrics.width, height: metrics.height)
+                .onAppear { model.noteUnavailable(file.url) }
+        } else if let image = model.cachedViewerImage(file) {
+            Image(decorative: image, scale: 1)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: metrics.width, height: metrics.height)
+        } else {
+            StatePlaceholder(icon: "photo", message: "加载中…")
+                .frame(width: metrics.width, height: metrics.height)
+        }
+    }
+
+    private func compareMetrics(file: ImageFile, viewport: CGSize) -> (fitScale: Double, content: CGSize) {
+        guard let source = model.compareSourceSize(for: file)
+            ?? model.cachedViewerImage(file).map({ ImagePixelSize(width: $0.width, height: $0.height) })
+        else {
+            return (1, CGSize(width: viewport.width, height: viewport.height))
+        }
+        let pad = Double(theme.spacingLG)
+        let fitW = max(Double(viewport.width) - pad * 2, 1)
+        let fitH = max(Double(viewport.height) - pad * 2, 1)
+        let fitScale = ZoomMath.fitScale(
+            imageWidth: Double(source.width),
+            imageHeight: Double(source.height),
+            viewportWidth: fitW,
+            viewportHeight: fitH
+        )
+        let display = ZoomMath.displayScale(
+            fitScale: fitScale,
+            multiple: model.compareMultiple(fitScale: fitScale)
+        )
+        return (
+            fitScale,
+            CGSize(width: Double(source.width) * display, height: Double(source.height) * display)
+        )
+    }
+
+    private func publishCompareLayout(file: ImageFile, metrics: (fitScale: Double, content: CGSize), viewport: CGSize) {
+        model.noteCompareLayout(
+            url: file.url,
+            layout: ViewerLayout(
+                contentWidth: Double(metrics.content.width),
+                contentHeight: Double(metrics.content.height),
+                viewportWidth: Double(viewport.width),
+                viewportHeight: Double(viewport.height),
+                fitScale: metrics.fitScale
+            )
+        )
+    }
+
+    private var compareDrag: some Gesture {
+        DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                if comparePanOrigin == nil { comparePanOrigin = model.comparePan }
+                let origin = comparePanOrigin ?? .zero
+                model.setComparePan(
+                    x: origin.x + Double(value.translation.width),
+                    y: origin.y + Double(value.translation.height)
+                )
+            }
+            .onEnded { _ in
+                comparePanOrigin = nil
+            }
+    }
+
+    private func compareLabel(_ file: ImageFile, index: Int) -> some View {
+        HStack(spacing: theme.spacingSM) {
+            Text("\(index + 1)")
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(file.filename)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, theme.spacingMD)
+        .padding(.vertical, theme.spacingXS)
+        .background(.regularMaterial, in: Capsule())
+        .padding(.bottom, theme.spacingMD)
+        .allowsHitTesting(false)
+        .accessibilityLabel("第 \(index + 1) 张，\(file.filename)")
     }
 
     // MARK: - 查看器
@@ -1006,6 +1256,11 @@ struct ContentView: View {
         if model.mode == .viewer {
             pendingSearchFocus = true
             model.closeViewer()
+            return
+        }
+        if model.mode == .compare {
+            pendingSearchFocus = true
+            model.closeCompare()
             return
         }
         DispatchQueue.main.async { focusSearchField() }
@@ -1446,6 +1701,7 @@ private final class ClickCountView: NSView {
 @MainActor
 private final class ContextMenuTarget: NSObject {
     var onOpen: (() -> Void)?
+    var onCompare: (() -> Void)?
     var onReveal: (() -> Void)?
     var onCopyName: (() -> Void)?
     var onCopyImage: (() -> Void)?
@@ -1455,6 +1711,7 @@ private final class ContextMenuTarget: NSObject {
     var onClearRating: (() -> Void)?
 
     @objc func openAction(_ sender: Any?) { onOpen?() }
+    @objc func compareAction(_ sender: Any?) { onCompare?() }
     @objc func revealAction(_ sender: Any?) { onReveal?() }
     @objc func copyNameAction(_ sender: Any?) { onCopyName?() }
     @objc func copyImageAction(_ sender: Any?) { onCopyImage?() }
@@ -1556,14 +1813,31 @@ private struct EventMonitor: NSViewRepresentable {
                 NSApp.keyWindow?.makeFirstResponder(nil)
                 model.openViewer(screenLongEdge: screenLongEdge())
                 return nil
+            case .openCompare:
+                if !model.openCompare(screenLongEdge: screenLongEdge()) {
+                    toasts?.show("请选择 2 到 3 张图片进行对比", canUndo: false)
+                }
+                return nil
             case .closeViewer:
-                model.closeViewer()
+                if model.mode == .compare {
+                    model.closeCompare()
+                } else {
+                    model.closeViewer()
+                }
                 return nil
             case .zoomIn:
-                model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                if model.mode == .compare {
+                    model.zoomCompare(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                } else {
+                    model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                }
                 return nil
             case .zoomOut:
-                model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                if model.mode == .compare {
+                    model.zoomCompare(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                } else {
+                    model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                }
                 return nil
             case .copyImage:
                 NotificationCenter.default.post(name: .copyImageRequested, object: nil)
@@ -1571,19 +1845,38 @@ private struct EventMonitor: NSViewRepresentable {
             case .toggleCaptureInfo:
                 NotificationCenter.default.post(name: .toggleCaptureInfoRequested, object: nil)
                 return nil
+            case .consume:
+                return nil
             case .openFolder:
                 return event
             }
         }
 
         func handleMagnify(_ event: NSEvent) -> NSEvent? {
-            guard let model, model.mode == .viewer else { return event }
-            model.applyMagnification(event.magnification, screenLongEdge: screenLongEdge())
-            return nil
+            guard let model else { return event }
+            switch model.mode {
+            case .viewer:
+                model.applyMagnification(event.magnification, screenLongEdge: screenLongEdge())
+                return nil
+            case .compare:
+                model.applyCompareMagnification(event.magnification, screenLongEdge: screenLongEdge())
+                return nil
+            case .grid, .noFolder:
+                return event
+            }
         }
 
         func handleScrollWheel(_ event: NSEvent) -> NSEvent? {
-            guard let model, let scroll, model.mode == .viewer else { return event }
+            guard let model, let scroll else { return event }
+            if model.mode == .compare {
+                if event.modifierFlags.contains(.command) {
+                    model.applyCompareScrollZoom(event.scrollingDeltaY, screenLongEdge: screenLongEdge())
+                } else if model.comparePrefersPan {
+                    model.comparePanBy(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY)
+                }
+                return nil
+            }
+            guard model.mode == .viewer else { return event }
             if event.modifierFlags.contains(.command) {
                 model.applyScrollZoom(event.scrollingDeltaY, screenLongEdge: screenLongEdge())
                 return nil

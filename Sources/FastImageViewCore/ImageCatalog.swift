@@ -71,6 +71,17 @@ public struct ImageCatalog: Equatable, Sendable {
         return []
     }
 
+    /// 对比模式快照：按网格显示顺序取当前选中项，最多 `limit` 张。
+    public func compareSelection(limit: Int = 3) -> [ImageFile] {
+        let ids = activeSelectionIDs
+        return Array(filtered.filter { ids.contains($0.url) }.prefix(max(0, limit)))
+    }
+
+    /// 只移动当前图，保留多选集合，供对比模式单击进入单图。
+    public mutating func focus(url: URL) {
+        selectionID = url
+    }
+
     public mutating func refresh(with files: [ImageFile], renamedSelection: URL? = nil) {
         let previousID = selectionID
         let previousIDs = selectionIDs

@@ -60,23 +60,39 @@ struct FastImageViewApp: App {
             }
             CommandGroup(after: .toolbar) {
                 Button("放大") {
-                    model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                    if model.mode == .compare {
+                        model.zoomCompare(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                    } else {
+                        model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
+                    }
                 }
                 .keyboardShortcut("=", modifiers: .command)
-                .disabled(model.mode != .viewer)
+                .disabled(model.mode != .viewer && model.mode != .compare)
                 Button("缩小") {
-                    model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                    if model.mode == .compare {
+                        model.zoomCompare(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                    } else {
+                        model.zoom(by: 1 / ZoomMath.step, screenLongEdge: screenLongEdge())
+                    }
                 }
                 .keyboardShortcut("-", modifiers: .command)
-                .disabled(model.mode != .viewer)
+                .disabled(model.mode != .viewer && model.mode != .compare)
                 Button("适合窗口") {
-                    model.setFit(.fit, screenLongEdge: screenLongEdge())
+                    if model.mode == .compare {
+                        model.setCompareFit(.fit, screenLongEdge: screenLongEdge())
+                    } else {
+                        model.setFit(.fit, screenLongEdge: screenLongEdge())
+                    }
                 }
-                .disabled(model.mode != .viewer)
+                .disabled(model.mode != .viewer && model.mode != .compare)
                 Button("实际像素") {
-                    model.setFit(.actual, screenLongEdge: screenLongEdge())
+                    if model.mode == .compare {
+                        model.setCompareFit(.actual, screenLongEdge: screenLongEdge())
+                    } else {
+                        model.setFit(.actual, screenLongEdge: screenLongEdge())
+                    }
                 }
-                .disabled(model.mode != .viewer)
+                .disabled(model.mode != .viewer && model.mode != .compare)
             }
             CommandGroup(replacing: .help) {
                 Button("键盘快捷键…") { showShortcutsHelp() }
@@ -139,6 +155,7 @@ func showShortcutsHelp() {
     空格  打开 / 关闭大图
     1–5  设置分级
     ⇧1–⇧5  切换分级筛选（仅网格）
+    P  对比选中的 2–3 张图片
     I  显示 / 隐藏图片信息
     ⌘+ / ⌘−  放大 / 缩小
     ⌘滚轮 / 捏合  连续缩放

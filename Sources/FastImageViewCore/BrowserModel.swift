@@ -25,9 +25,23 @@ public protocol PreviewPipeline: AnyObject {
     func requestThumbnail(file: ImageFile)
     func cancelQueuedThumbnail(url: URL)
     func showViewer(current: ImageFile, previous: ImageFile?, next: ImageFile?, maxPixelSize: Int)
+    func showCompare(files: [ImageFile], maxPixelSize: Int)
     func cachedThumbnail(file: ImageFile) -> CGImage?
     func cachedViewerImage(file: ImageFile) -> CGImage?
     func didFail(url: URL) -> Bool
+}
+
+public extension PreviewPipeline {
+    /// 默认实现让测试替身无需改动即可编译。
+    func showCompare(files: [ImageFile], maxPixelSize: Int) {
+        guard let current = files.first else { return }
+        showViewer(
+            current: current,
+            previous: files.count > 1 ? files[1] : nil,
+            next: files.count > 2 ? files[2] : nil,
+            maxPixelSize: maxPixelSize
+        )
+    }
 }
 
 @MainActor
@@ -41,6 +55,11 @@ public final class BrowserModel {
     public var statusMessage: String?
     public private(set) var zoom: ViewerZoom = .fit
     public private(set) var pan = ImagePan.zero
+    public private(set) var compareFiles: [ImageFile] = []
+    public private(set) var compareZoom: ViewerZoom = .fit
+    public private(set) var comparePan = ImagePan.zero
+    public private(set) var compareLayouts: [URL: ViewerLayout] = [:]
+    private var compareSourceSizes: [URL: ImagePixelSize] = [:]
     public private(set) var viewerLayout: ViewerLayout?
     public private(set) var viewerSourceSize: ImagePixelSize?
     public private(set) var screenLongEdge = 1800
@@ -151,6 +170,185 @@ public final class BrowserModel {
         }
     }
 
+    // MARK: 对比模式
+
+    /// 全部可见选中项；超过 3 张时 `openCompare` 会拒绝，入口据此禁用。
+    public var compareCandidateFiles: [ImageFile] { catalog.compareSelection(limit: .max) }
+
+    public var canOpenCompare: Bool { (2...3).contains(compareCandidateFiles.count) }
+
+    public func compareSourceSize(for file: ImageFile) -> ImagePixelSize? {
+        compareSourceSizes[file.url]
+    }
+
+    public func compareMultiple(fitScale: Double) -> Double {
+        switch compareZoom {
+        case .fit:
+            return 1
+        case .actual:
+            return ZoomMath.actualMultiple(fitScale: fitScale)
+        case .multiple(let value):
+            return value
+        }
+    }
+
+    public var comparePrefersPan: Bool {
+        switch compareZoom {
+        case .fit: return false
+        case .actual, .multiple: return true
+        }
+    }
+
+    public var compareZoomLabel: String {
+        switch compareZoom {
+        case .fit:
+            return "适合"
+        case .actual:
+            return "100%"
+        case .multiple(let value):
+            let fitScale = compareLayouts.values.map(\.fitScale).min() ?? 1
+            let percent = Int((ZoomMath.displayScale(fitScale: fitScale, multiple: value) * 100).rounded())
+            return "\(percent)%"
+        }
+    }
+
+    /// 仅当选中 2–3 张时进入；失败返回 `false` 且不改变模式。
+    @discardableResult
+    public func openCompare(screenLongEdge: Int) -> Bool {
+        let files = compareCandidateFiles
+        guard (2...3).contains(files.count) else { return false }
+        if mode == .viewer { closeViewer() }
+        self.screenLongEdge = screenLongEdge
+        compareFiles = files
+        compareSourceSizes = Dictionary(
+            uniqueKeysWithValues: files.compactMap { file in
+                imageIO.pixelSize(url: file.url).map { (file.url, $0) }
+            }
+        )
+        compareZoom = .fit
+        comparePan = .zero
+        compareLayouts = [:]
+        mode = .compare
+        refreshCompareImages()
+        return true
+    }
+
+    public func closeCompare() {
+        if mode == .compare { mode = .grid }
+        compareFiles = []
+        compareSourceSizes = [:]
+        compareZoom = .fit
+        comparePan = .zero
+        compareLayouts = [:]
+    }
+
+    public func openViewerFromCompare(url: URL, screenLongEdge: Int) {
+        guard compareFiles.contains(where: { $0.url == url }) else { return }
+        self.screenLongEdge = screenLongEdge
+        var next = catalog
+        next.focus(url: url)
+        catalog = next
+        closeCompare()
+        zoom = .fit
+        pan = .zero
+        mode = .viewer
+        refreshViewer()
+    }
+
+    public func setCompareFit(_ fit: ViewerFit, screenLongEdge: Int) {
+        guard mode == .compare else { return }
+        self.screenLongEdge = screenLongEdge
+        compareZoom = fit == .fit ? .fit : .actual
+        comparePan = .zero
+        refreshCompareImages()
+    }
+
+    public func setCompareZoomMultiple(_ raw: Double, screenLongEdge: Int) {
+        guard mode == .compare else { return }
+        self.screenLongEdge = screenLongEdge
+        let previous = compareMaxPixel
+        let clamped = ZoomMath.clamp(raw)
+        if ZoomMath.isFit(clamped) {
+            compareZoom = .fit
+            comparePan = .zero
+        } else {
+            compareZoom = .multiple(clamped)
+            reclampComparePan()
+        }
+        if previous != compareMaxPixel { refreshCompareImages() }
+    }
+
+    public func zoomCompare(by factor: Double, screenLongEdge: Int) {
+        let fitScale = compareLayouts.values.map(\.fitScale).min() ?? 1
+        setCompareZoomMultiple(compareMultiple(fitScale: fitScale) * factor, screenLongEdge: screenLongEdge)
+    }
+
+    public func applyCompareMagnification(_ magnification: Double, screenLongEdge: Int) {
+        let fitScale = compareLayouts.values.map(\.fitScale).min() ?? 1
+        setCompareZoomMultiple(
+            ZoomMath.applyingMagnify(multiple: compareMultiple(fitScale: fitScale), magnification: magnification),
+            screenLongEdge: screenLongEdge
+        )
+    }
+
+    public func applyCompareScrollZoom(_ deltaY: Double, screenLongEdge: Int) {
+        let fitScale = compareLayouts.values.map(\.fitScale).min() ?? 1
+        setCompareZoomMultiple(
+            ZoomMath.applyingScroll(multiple: compareMultiple(fitScale: fitScale), deltaY: deltaY),
+            screenLongEdge: screenLongEdge
+        )
+    }
+
+    public func noteCompareLayout(url: URL, layout: ViewerLayout) {
+        guard compareFiles.contains(where: { $0.url == url }) else { return }
+        guard compareLayouts[url] != layout else { return }
+        compareLayouts[url] = layout
+        reclampComparePan()
+    }
+
+    public func setComparePan(x: Double, y: Double) {
+        comparePan = ComparePan.clamped(x: x, y: y, layouts: Array(compareLayouts.values))
+    }
+
+    public func comparePanBy(dx: Double, dy: Double) {
+        setComparePan(x: comparePan.x + dx, y: comparePan.y + dy)
+    }
+
+    private var compareMaxPixel: Int {
+        PreviewMaxPixel.compare(zoom: compareZoom, panes: compareFiles.count, screenLongEdge: screenLongEdge)
+    }
+
+    private func refreshCompareImages() {
+        guard !compareFiles.isEmpty else { return }
+        previews.showCompare(files: compareFiles, maxPixelSize: compareMaxPixel)
+    }
+
+    private func reclampComparePan() {
+        comparePan = ComparePan.clamped(
+            x: comparePan.x,
+            y: comparePan.y,
+            layouts: Array(compareLayouts.values)
+        )
+    }
+
+    /// 对比快照跟随目录与筛选：不足 2 张时退回网格。
+    private func refreshCompare() {
+        guard mode == .compare else { return }
+        let visible = Set(catalog.filtered.map(\.url))
+        let kept = compareFiles.filter { visible.contains($0.url) }
+        guard kept.count >= 2 else {
+            closeCompare()
+            return
+        }
+        let keptURLs = Set(kept.map(\.url))
+        guard keptURLs != Set(compareFiles.map(\.url)) else { return }
+        compareFiles = kept
+        compareSourceSizes = compareSourceSizes.filter { keptURLs.contains($0.key) }
+        compareLayouts = compareLayouts.filter { keptURLs.contains($0.key) }
+        reclampComparePan()
+        refreshCompareImages()
+    }
+
     public func beginOpen() -> Int {
         generation += 1
         isScanning = true
@@ -222,6 +420,7 @@ public final class BrowserModel {
             }
         case .success(let files):
             previews.reset()
+            closeCompare()
             undoStack.removeAll()
             catalog.replaceFiles(files)
             syncCatalogRatings()
@@ -281,6 +480,8 @@ public final class BrowserModel {
         if mode == .viewer {
             if catalog.selectedFile == nil { mode = .grid }
             else { refreshViewer() }
+        } else if mode == .compare {
+            refreshCompare()
         }
     }
 
@@ -348,6 +549,7 @@ public final class BrowserModel {
         if mode == .viewer {
             return catalog.selectedFile.map { [$0] } ?? []
         }
+        if mode == .compare { return [] }
         return catalog.deletionTargets
     }
 
@@ -469,6 +671,7 @@ public final class BrowserModel {
 
     public func openViewer(screenLongEdge: Int) {
         guard catalog.selectedFile != nil else { return }
+        if mode == .compare { closeCompare() }
         self.screenLongEdge = screenLongEdge
         zoom = .fit
         pan = .zero
@@ -556,6 +759,7 @@ public final class BrowserModel {
     }
 
     public func deleteSelected() {
+        guard mode != .compare else { return }
         let targets = mode == .viewer
             ? (catalog.selectedFile.map { [$0] } ?? [])
             : catalog.deletionTargets
@@ -616,7 +820,9 @@ public final class BrowserModel {
         var next = catalog
         next.restore(restored)
         catalog = next
-        if mode == .viewer {
+        if mode == .compare {
+            refreshCompare()
+        } else if mode == .viewer {
             if catalog.selectedFile != nil {
                 refreshViewer()
             } else if let previousSelection, catalog.filtered.contains(where: { $0.url == previousSelection }) {
@@ -651,8 +857,13 @@ public final class BrowserModel {
         var next = catalog
         _ = next.remove(urls: [url])
         catalog = next
-        if mode == .viewer && catalog.selectedFile == nil { mode = .grid }
-        else if mode == .viewer { refreshViewer() }
+        if mode == .compare {
+            refreshCompare()
+        } else if mode == .viewer && catalog.selectedFile == nil {
+            mode = .grid
+        } else if mode == .viewer {
+            refreshViewer()
+        }
         previews.cancel(url: url)
     }
 
@@ -679,7 +890,11 @@ public final class BrowserModel {
     }
 
     private func leaveViewerIfNeeded() {
-        if mode == .viewer && catalog.selectedFile == nil { mode = .grid }
+        if mode == .viewer && catalog.selectedFile == nil {
+            mode = .grid
+        } else if mode == .compare {
+            refreshCompare()
+        }
     }
 
     private func refreshViewer() {

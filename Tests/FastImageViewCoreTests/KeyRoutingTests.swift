@@ -71,4 +71,29 @@ final class KeyRoutingTests: XCTestCase {
         XCTAssertEqual(interpretKey(key(18, command: true), focus: .browser, mode: .grid), .passThrough)
         XCTAssertEqual(interpretKey(key(18), focus: .browser, mode: .noFolder), .passThrough)
     }
+
+    func testPEntersCompareOnlyFromGridWithoutSearchFocus() {
+        XCTAssertEqual(interpretKey(key(35, chars: "p"), focus: .browser, mode: .grid), .openCompare)
+        XCTAssertEqual(interpretKey(key(35, chars: "p"), focus: .keyword, mode: .grid), .passThrough)
+        XCTAssertEqual(interpretKey(key(35, chars: "p"), focus: .browser, mode: .viewer), .passThrough)
+        XCTAssertEqual(interpretKey(key(35, chars: "p"), focus: .browser, mode: .noFolder), .passThrough)
+        XCTAssertEqual(interpretKey(key(35, command: true, chars: "p"), focus: .browser, mode: .grid), .passThrough)
+    }
+
+    func testCompareModeEscapeSpaceAndZoom() {
+        XCTAssertEqual(interpretKey(key(53), focus: .browser, mode: .compare), .closeViewer)
+        XCTAssertEqual(interpretKey(key(49), focus: .browser, mode: .compare), .closeViewer)
+        XCTAssertEqual(interpretKey(key(24, command: true, chars: "="), focus: .browser, mode: .compare), .zoomIn)
+        XCTAssertEqual(interpretKey(key(27, command: true, chars: "-"), focus: .browser, mode: .compare), .zoomOut)
+        XCTAssertEqual(interpretKey(key(8, command: true, chars: "c"), focus: .browser, mode: .compare), .copyImage)
+        XCTAssertEqual(interpretKey(key(6, command: true, chars: "z"), focus: .browser, mode: .compare), .undoTrash)
+    }
+
+    func testCompareModeConsumesDestructiveAndNavigationKeys() {
+        for code: UInt16 in [51, 117, 123, 124, 125, 126, 36, 35, 18, 19, 20, 21, 23] {
+            XCTAssertEqual(interpretKey(key(code), focus: .browser, mode: .compare), .consume, "keyCode \(code)")
+        }
+        XCTAssertEqual(interpretKey(key(18, shift: true), focus: .browser, mode: .compare), .consume)
+        XCTAssertEqual(interpretKey(key(51, command: true), focus: .browser, mode: .compare), .consume)
+    }
 }

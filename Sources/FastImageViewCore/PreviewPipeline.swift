@@ -155,6 +155,21 @@ public final class LivePreviewPipeline: PreviewPipeline {
         pump()
     }
 
+    public func showCompare(files: [ImageFile], maxPixelSize: Int) {
+        for job in scheduler.yieldQueuedThumbnails() {
+            untrackQueued(id: job.id, url: job.url)
+        }
+        let wanted = Set(files.map(\.url))
+        for job in scheduler.dropQueuedViewerJobs(keeping: wanted) {
+            untrackQueued(id: job.id, url: job.url)
+        }
+        wantedViewerURLs = wanted
+        for file in files {
+            enqueueViewer(file, maxPixelSize: resolvedPixelSize(file: file, requested: maxPixelSize), priority: .current)
+        }
+        pump()
+    }
+
     public func cachedThumbnail(file: ImageFile) -> CGImage? {
         thumbnails.image(url: file.url, maxPixelSize: PreviewMaxPixel.thumbnail, modified: file.modificationDate)
     }

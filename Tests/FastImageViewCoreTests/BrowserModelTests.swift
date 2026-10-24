@@ -401,4 +401,148 @@ final class BrowserModelTests: XCTestCase {
         )
         XCTAssertEqual(model.rating(for: file), 4)
     }
+
+    // MARK: 对比
+
+    private func selected(_ model: BrowserModel, files: [ImageFile]) {
+        model.select(url: files[0].url)
+        for file in files.dropFirst() {
+            model.select(url: file.url, gesture: .toggle)
+        }
+    }
+
+    func testOpenCompareKeepsGridOrderForTwoOrThreeFiles() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: [files[2], files[0]])
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        XCTAssertEqual(model.mode, .compare)
+        XCTAssertEqual(model.compareFiles.map(\.filename), ["a.jpg", "c.jpg"])
+
+        model.closeCompare()
+        selected(model, files: [files[1], files[2], files[0]])
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        XCTAssertEqual(model.compareFiles.map(\.filename), ["a.jpg", "b.jpg", "c.jpg"])
+    }
+
+    func testOpenCompareRejectsFewerThanTwoOrMoreThanThree() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg"), file("d.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+
+        model.select(url: files[0].url)
+        XCTAssertFalse(model.canOpenCompare)
+        XCTAssertFalse(model.openCompare(screenLongEdge: 1800))
+        XCTAssertEqual(model.mode, .grid)
+
+        selected(model, files: files)
+        XCTAssertEqual(model.compareCandidateFiles.count, 4)
+        XCTAssertFalse(model.canOpenCompare)
+        XCTAssertFalse(model.openCompare(screenLongEdge: 1800))
+        XCTAssertEqual(model.mode, .grid)
+        XCTAssertTrue(model.compareFiles.isEmpty)
+    }
+
+    func testCloseCompareClearsStateAndKeepsSelection() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        model.setCompareFit(.actual, screenLongEdge: 1800)
+        model.closeCompare()
+
+        XCTAssertEqual(model.mode, .grid)
+        XCTAssertTrue(model.compareFiles.isEmpty)
+        XCTAssertEqual(model.compareZoom, .fit)
+        XCTAssertEqual(model.comparePan, .zero)
+        XCTAssertEqual(model.catalog.deletionTargets.map(\.filename), ["a.jpg", "b.jpg"])
+    }
+
+    func testOpenViewerFromCompareKeepsMultiSelection() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+
+        model.openViewerFromCompare(url: files[1].url, screenLongEdge: 1800)
+        XCTAssertEqual(model.mode, .viewer)
+        XCTAssertEqual(model.catalog.selectedFile?.filename, "b.jpg")
+        XCTAssertEqual(model.catalog.selectionIDs, Set(files.map(\.url)))
+        XCTAssertTrue(model.compareFiles.isEmpty)
+    }
+
+    func testCompareFollowsFilteringAndExitsBelowTwo() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+
+        model.setKeyword("a.jpg")
+        // 只剩 1 张，自动退回网格。
+        XCTAssertEqual(model.mode, .grid)
+        XCTAssertTrue(model.compareFiles.isEmpty)
+    }
+
+    func testComparePrunesWhenVisibleFilesDropButKeepsTwo() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+
+        model.applyFolderListing([files[0], files[1]], identityByPath: [:])
+        XCTAssertEqual(model.mode, .compare)
+        XCTAssertEqual(model.compareFiles.map(\.filename), ["a.jpg", "b.jpg"])
+    }
+
+    func testOpeningAnotherFolderClearsCompare() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+
+        let generation = model.beginOpen()
+        model.pendingFolderURL = URL(fileURLWithPath: "/other")
+        model.acceptScan(generation: generation, outcome: .success([file("d.jpg")]))
+        XCTAssertEqual(model.mode, .grid)
+        XCTAssertTrue(model.compareFiles.isEmpty)
+    }
+
+    func testCompareZoomSwitchesAndClearsPan() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        model.noteCompareLayout(
+            url: files[0].url,
+            layout: ViewerLayout(contentWidth: 4000, contentHeight: 3000, viewportWidth: 1000, viewportHeight: 1000, fitScale: 0.25)
+        )
+        model.noteCompareLayout(
+            url: files[1].url,
+            layout: ViewerLayout(contentWidth: 3000, contentHeight: 2000, viewportWidth: 1000, viewportHeight: 1000, fitScale: 0.33)
+        )
+        model.setComparePan(x: 2000, y: 2000)
+        XCTAssertEqual(model.comparePan.x, 1000)
+        XCTAssertEqual(model.comparePan.y, 500)
+
+        model.setCompareFit(.actual, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .actual)
+        XCTAssertEqual(model.comparePan, .zero)
+        XCTAssertEqual(model.compareZoomLabel, "100%")
+
+        model.setCompareZoomMultiple(1.5, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .multiple(1.5))
+
+        model.setCompareFit(.fit, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .fit)
+        XCTAssertEqual(model.comparePan, .zero)
+    }
+
+    func testCompareRatingTargetsAreEmpty() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        XCTAssertTrue(model.ratingTargets.isEmpty)
+        model.setRating(3)
+        XCTAssertNil(model.rating(for: files[0]))
+    }
 }
