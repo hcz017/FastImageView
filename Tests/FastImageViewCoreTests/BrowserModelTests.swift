@@ -278,4 +278,127 @@ final class BrowserModelTests: XCTestCase {
         XCTAssertEqual(model.recentFolders, [])
         XCTAssertEqual(defaults.stringArray(forKey: "recentFolderPaths") ?? [], [])
     }
+
+    // MARK: 分级
+
+    private func openedRatedModel(files: [ImageFile], ratings: [String: Int] = [:]) -> (BrowserModel, InMemoryRatingStore) {
+        let scanner = ScriptedScanner()
+        scanner.result = .success(files)
+        let store = InMemoryRatingStore(ratings: ratings)
+        let model = BrowserModel(
+            scanner: scanner,
+            deletion: DeletionService(storage: ModelTrash(files: Set(files.map(\.url.path)))),
+            previews: RecordingPipeline(),
+            ratingStore: store
+        )
+        let generation = model.beginOpen()
+        model.pendingFolderURL = URL(fileURLWithPath: "/pics")
+        model.acceptScan(generation: generation, outcome: .success(files))
+        return (model, store)
+    }
+
+    func testSetRatingAppliesToSelectionAndRepeatClears() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg")]
+        let (model, store) = openedRatedModel(files: files)
+        model.select(url: files[0].url)
+        model.select(url: files[1].url, gesture: .toggle)
+
+        model.setRating(3)
+        XCTAssertEqual(model.rating(for: files[0]), 3)
+        XCTAssertEqual(model.rating(for: files[1]), 3)
+        XCTAssertNil(model.rating(for: files[2]))
+        XCTAssertEqual(store.ratings.count, 2)
+
+        model.setRating(3)
+        XCTAssertNil(model.rating(for: files[0]))
+        XCTAssertNil(model.rating(for: files[1]))
+        XCTAssertTrue(store.ratings.isEmpty)
+    }
+
+    func testSetRatingUnifiesMixedLevelsAndClearRating() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let ratings = [
+            files[0].url.standardizedFileURL.path: 1,
+            files[1].url.standardizedFileURL.path: 2
+        ]
+        let (model, _) = openedRatedModel(files: files, ratings: ratings)
+        model.select(url: files[0].url)
+        model.select(url: files[1].url, gesture: .toggle)
+
+        model.setRating(4)
+        XCTAssertEqual(model.rating(for: files[0]), 4)
+        XCTAssertEqual(model.rating(for: files[1]), 4)
+
+        model.clearRating()
+        XCTAssertNil(model.rating(for: files[0]))
+        XCTAssertNil(model.rating(for: files[1]))
+    }
+
+    func testRatingFilterTogglesAndResetsWhenFolderChanges() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg")]
+        let ratings = [
+            files[0].url.standardizedFileURL.path: 1,
+            files[1].url.standardizedFileURL.path: 2
+        ]
+        let (model, _) = openedRatedModel(files: files, ratings: ratings)
+
+        model.toggleRatingFilter(1)
+        XCTAssertEqual(model.catalog.filtered.map(\.filename), ["a.jpg"])
+        XCTAssertEqual(model.catalog.selectionID, files[0].url)
+
+        model.toggleUnratedFilter()
+        XCTAssertEqual(model.catalog.filtered.map(\.filename), ["a.jpg", "c.jpg"])
+
+        model.clearRatingFilter()
+        XCTAssertEqual(model.catalog.filtered.count, 3)
+
+        model.toggleRatingFilter(2)
+        let generation = model.beginOpen()
+        model.pendingFolderURL = URL(fileURLWithPath: "/other")
+        model.acceptScan(generation: generation, outcome: .success([file("d.jpg")]))
+        XCTAssertTrue(model.catalog.selectedRatings.isEmpty)
+        XCTAssertFalse(model.catalog.includesUnrated)
+    }
+
+    func testRatingFilterMovesSelectionOffHiddenFile() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let ratings = [
+            files[0].url.standardizedFileURL.path: 1,
+            files[1].url.standardizedFileURL.path: 2
+        ]
+        let (model, _) = openedRatedModel(files: files, ratings: ratings)
+        model.select(url: files[0].url)
+
+        model.toggleRatingFilter(2)
+        XCTAssertEqual(model.catalog.selectedFile?.filename, "b.jpg")
+        model.toggleRatingFilter(2)
+        XCTAssertEqual(model.catalog.selectedFile?.filename, "b.jpg")
+    }
+
+    func testRatingSurvivesTrashAndUndo() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(
+            files: files,
+            ratings: [files[0].url.standardizedFileURL.path: 5]
+        )
+        model.select(url: files[0].url)
+        model.deleteSelected()
+        XCTAssertNil(model.catalog.files.first(where: { $0.filename == "a.jpg" }))
+
+        model.undo()
+        XCTAssertEqual(model.catalog.files.count, 2)
+        XCTAssertEqual(model.rating(for: files[0]), 5)
+    }
+
+    func testRatingsLoadFromStoreOnInit() {
+        let file = self.file("a.jpg")
+        let store = InMemoryRatingStore(ratings: [file.url.standardizedFileURL.path: 4])
+        let model = BrowserModel(
+            scanner: ScriptedScanner(),
+            deletion: DeletionService(storage: ModelTrash(files: [])),
+            previews: RecordingPipeline(),
+            ratingStore: store
+        )
+        XCTAssertEqual(model.rating(for: file), 4)
+    }
 }

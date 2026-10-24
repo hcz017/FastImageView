@@ -10,6 +10,10 @@ public struct ImageCatalog: Equatable, Sendable {
     public var files: [ImageFile]
     public var keyword: String
     public var selectedFormats: Set<ImageFormat>
+    /// 文件 URL → 分级（1...5），由 BrowserModel 同步。
+    public var ratings: [URL: Int]
+    public var selectedRatings: Set<Int>
+    public var includesUnrated: Bool
     public var selectionID: URL?
     public var selectionIDs: Set<URL>
     public var selectionAnchor: URL?
@@ -18,6 +22,9 @@ public struct ImageCatalog: Equatable, Sendable {
         files = []
         keyword = ""
         selectedFormats = []
+        ratings = [:]
+        selectedRatings = []
+        includesUnrated = false
         selectionID = nil
         selectionIDs = []
         selectionAnchor = nil
@@ -27,8 +34,20 @@ public struct ImageCatalog: Equatable, Sendable {
         files.filter { file in
             let keywordOK = keyword.isEmpty || file.filename.localizedCaseInsensitiveContains(keyword)
             let formatOK = selectedFormats.isEmpty || selectedFormats.contains(file.format)
-            return keywordOK && formatOK
+            let ratingOK: Bool
+            if selectedRatings.isEmpty && !includesUnrated {
+                ratingOK = true
+            } else {
+                let level = ratings[file.url]
+                ratingOK = (level.map(selectedRatings.contains) ?? false)
+                    || (includesUnrated && level == nil)
+            }
+            return keywordOK && formatOK && ratingOK
         }
+    }
+
+    public var hasRatingFilter: Bool {
+        !selectedRatings.isEmpty || includesUnrated
     }
 
     public var availableFormats: [ImageFormat] {
@@ -100,6 +119,8 @@ public struct ImageCatalog: Equatable, Sendable {
         self.files = files
         keyword = ""
         selectedFormats = []
+        selectedRatings = []
+        includesUnrated = false
         selectionID = files.first?.url
         selectionIDs = selectionID.map { [$0] } ?? []
         selectionAnchor = selectionID

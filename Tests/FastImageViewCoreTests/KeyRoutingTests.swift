@@ -2,8 +2,8 @@ import XCTest
 @testable import FastImageViewCore
 
 final class KeyRoutingTests: XCTestCase {
-    private func key(_ code: UInt16, command: Bool = false, chars: String = "") -> KeyChord {
-        KeyChord(keyCode: code, command: command, charactersIgnoringModifiers: chars)
+    private func key(_ code: UInt16, command: Bool = false, shift: Bool = false, chars: String = "") -> KeyChord {
+        KeyChord(keyCode: code, command: command, shift: shift, charactersIgnoringModifiers: chars)
     }
 
     func testKeywordFieldOwnsDeleteAndUndo() {
@@ -27,9 +27,9 @@ final class KeyRoutingTests: XCTestCase {
     }
 
     func testViewerFitAndEscapeDoNotApplyInGrid() {
-        XCTAssertEqual(interpretKey(key(18), focus: .browser, mode: .viewer), .actualPixels)
-        XCTAssertEqual(interpretKey(key(29), focus: .browser, mode: .viewer), .fit)
-        XCTAssertEqual(interpretKey(key(18), focus: .browser, mode: .grid), .passThrough)
+        XCTAssertEqual(interpretKey(key(18), focus: .browser, mode: .viewer), .setRating(1))
+        XCTAssertEqual(interpretKey(key(29), focus: .browser, mode: .viewer), .passThrough)
+        XCTAssertEqual(interpretKey(key(18), focus: .browser, mode: .grid), .setRating(1))
         XCTAssertEqual(interpretKey(key(34, chars: "i"), focus: .browser, mode: .viewer), .toggleCaptureInfo)
         XCTAssertEqual(interpretKey(key(34, chars: "i"), focus: .browser, mode: .grid), .passThrough)
         XCTAssertEqual(interpretKey(key(34, chars: "i"), focus: .keyword, mode: .viewer), .passThrough)
@@ -56,5 +56,19 @@ final class KeyRoutingTests: XCTestCase {
         XCTAssertEqual(interpretKey(key(49), focus: .browser, mode: .viewer), .closeViewer)
         XCTAssertEqual(interpretKey(key(49), focus: .keyword, mode: .grid), .passThrough)
         XCTAssertEqual(interpretKey(key(49, command: true), focus: .browser, mode: .grid), .passThrough)
+    }
+
+    func testNumberKeysRateInGridAndViewerAndShiftFiltersOnlyInGrid() {
+        let levels: [(UInt16, Int)] = [(18, 1), (19, 2), (20, 3), (21, 4), (23, 5)]
+        for (code, level) in levels {
+            XCTAssertEqual(interpretKey(key(code), focus: .browser, mode: .grid), .setRating(level))
+            XCTAssertEqual(interpretKey(key(code), focus: .browser, mode: .viewer), .setRating(level))
+            XCTAssertEqual(interpretKey(key(code, shift: true), focus: .browser, mode: .grid), .toggleRatingFilter(level))
+            XCTAssertEqual(interpretKey(key(code, shift: true), focus: .browser, mode: .viewer), .passThrough)
+        }
+        XCTAssertEqual(interpretKey(key(18), focus: .keyword, mode: .grid), .passThrough)
+        XCTAssertEqual(interpretKey(key(18, shift: true), focus: .keyword, mode: .grid), .passThrough)
+        XCTAssertEqual(interpretKey(key(18, command: true), focus: .browser, mode: .grid), .passThrough)
+        XCTAssertEqual(interpretKey(key(18), focus: .browser, mode: .noFolder), .passThrough)
     }
 }

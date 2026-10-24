@@ -34,6 +34,20 @@ struct AppTheme {
     /// 行尾勾选列固定宽度，保证各行右边缘对齐。
     let menuCheckmarkWidth: CGFloat = 16
 
+    // MARK: 分级
+    /// 缩略图左下角格式徽标与右下角分级徽标共用的高度。
+    let badgeHeight: CGFloat = 21
+    /// 分级徽标颜色，缩略图与筛选面板一致；后续可按等级区分。
+    let ratingBadgeColor = Color(nsColor: .systemYellow)
+    let ratingBadgeShadow = Color.black.opacity(0.45)
+    let ratingBadgeShadowRadius: CGFloat = 1.5
+    /// 大图里设置/取消分级后，右下角反馈徽标比缩略图徽标更大，便于看见。
+    let ratingFeedbackSize: CGFloat = 34
+
+    func ratingColor(_ level: Int) -> Color {
+        ratingBadgeColor
+    }
+
     // MARK: 颜色
     let thumbnailPlaceholder = Color.gray.opacity(0.15)
     let recentRowFill = Color.gray.opacity(0.08)

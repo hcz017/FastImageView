@@ -72,12 +72,10 @@ struct FastImageViewApp: App {
                 Button("适合窗口") {
                     model.setFit(.fit, screenLongEdge: screenLongEdge())
                 }
-                .keyboardShortcut("0")
                 .disabled(model.mode != .viewer)
                 Button("实际像素") {
                     model.setFit(.actual, screenLongEdge: screenLongEdge())
                 }
-                .keyboardShortcut("1")
                 .disabled(model.mode != .viewer)
             }
             CommandGroup(replacing: .help) {
@@ -139,7 +137,8 @@ func showShortcutsHelp() {
     ↑ ↓  在网格中按行移动
     ⌘F  搜索文件名
     空格  打开 / 关闭大图
-    0 / 1  适合窗口 / 实际像素
+    1–5  设置分级
+    ⇧1–⇧5  切换分级筛选（仅网格）
     I  显示 / 隐藏图片信息
     ⌘+ / ⌘−  放大 / 缩小
     ⌘滚轮 / 捏合  连续缩放

@@ -142,4 +142,41 @@ final class ImageCatalogTests: XCTestCase {
         catalog.moveSelection(by: 1)
         XCTAssertEqual(catalog.selectionID, catalog.files[1].url)
     }
+
+    func testRatingFilterORsLevelsWithUnratedAndANDsOtherFilters() {
+        var catalog = ImageCatalog()
+        let a = file("a.jpg", format: .jpeg)
+        let b = file("b.jpg", format: .jpeg)
+        let c = file("c.png", format: .png)
+        catalog.files = [a, b, c]
+        catalog.ratings = [a.url: 3, b.url: 5]
+        catalog.selectionID = c.url
+
+        catalog.selectedRatings = [3]
+        XCTAssertEqual(catalog.filtered.map(\.filename), ["a.jpg"])
+        catalog.selectedRatings = [3, 5]
+        XCTAssertEqual(catalog.filtered.map(\.filename), ["a.jpg", "b.jpg"])
+
+        catalog.selectedRatings = []
+        catalog.includesUnrated = true
+        XCTAssertEqual(catalog.filtered.map(\.filename), ["c.png"])
+        XCTAssertTrue(catalog.hasRatingFilter)
+
+        catalog.includesUnrated = false
+        catalog.selectedRatings = [5]
+        catalog.selectedFormats = [.png]
+        XCTAssertTrue(catalog.filtered.isEmpty)
+        catalog.clampSelection()
+        XCTAssertNil(catalog.selectionID)
+    }
+
+    func testReplaceFilesClearsRatingFilter() {
+        var catalog = ImageCatalog()
+        catalog.files = [file("a.jpg", format: .jpeg)]
+        catalog.selectedRatings = [3]
+        catalog.includesUnrated = true
+        catalog.replaceFiles([file("b.jpg", format: .jpeg)])
+        XCTAssertTrue(catalog.selectedRatings.isEmpty)
+        XCTAssertFalse(catalog.includesUnrated)
+    }
 }

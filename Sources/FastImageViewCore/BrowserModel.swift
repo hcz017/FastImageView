@@ -49,8 +49,11 @@ public final class BrowserModel {
     public private(set) var isScanning = false
     public private(set) var listingRevision = 0
     public private(set) var recentFolders: [URL]
+    /// 文件标准路径 → 分级（1...5）。
+    public private(set) var ratings: [String: Int]
     private var recentList: RecentFolderList
     private let recentDefaults: UserDefaults?
+    private let ratingStore: any RatingStoring
     private var pendingSelectionURL: URL?
     private var pendingSelectionURLs: [URL] = []
     private var undoStack: [UndoEntry] = []
@@ -69,7 +72,8 @@ public final class BrowserModel {
         previews: any PreviewPipeline,
         recentFolders: RecentFolderList = RecentFolderList(),
         recentDefaults: UserDefaults? = nil,
-        folderWatch: any FolderWatching = IdleFolderWatch()
+        folderWatch: any FolderWatching = IdleFolderWatch(),
+        ratingStore: any RatingStoring = InMemoryRatingStore()
     ) {
         self.scanner = scanner
         self.deletion = deletion
@@ -78,6 +82,8 @@ public final class BrowserModel {
         self.recentFolders = recentFolders.urls
         self.recentDefaults = recentDefaults
         self.folderWatch = folderWatch
+        self.ratingStore = ratingStore
+        self.ratings = ratingStore.load()
         self.renderGeneration = previews.generation
         previews.onGenerationChange = { [weak self] in
             guard let self else { return }
@@ -93,7 +99,8 @@ public final class BrowserModel {
             previews: LivePreviewPipeline(diskThumbnails: ThumbnailDiskStore.live()),
             recentFolders: RecentFolderList(defaults: defaults),
             recentDefaults: defaults,
-            folderWatch: DispatchFolderWatch()
+            folderWatch: DispatchFolderWatch(),
+            ratingStore: UserDefaultsRatingStore(defaults: defaults)
         )
     }
 
@@ -217,6 +224,7 @@ public final class BrowserModel {
             previews.reset()
             undoStack.removeAll()
             catalog.replaceFiles(files)
+            syncCatalogRatings()
             folderURL = pendingFolderURL
             if let folder = pendingFolderURL {
                 recentList.remember(folder)
@@ -264,6 +272,7 @@ public final class BrowserModel {
         let oldToken = selectedPath.flatMap { fileIdentity[$0] }
         let renamed = renamedSelection(selectedPath: selectedPath, oldToken: oldToken, files: files, identityByPath: identityByPath)
         catalog.refresh(with: files, renamedSelection: renamed)
+        syncCatalogRatings()
         fileIdentity = identityByPath
         listingRevision += 1
         for url in oldURLs.subtracting(files.map(\.url)) {
@@ -330,6 +339,108 @@ public final class BrowserModel {
         next.clampSelection()
         catalog = next
         leaveViewerIfNeeded()
+    }
+
+    // MARK: 分级
+
+    /// 当前可设置分级的图片：网格为全部选中项，大图为当前图片。
+    public var ratingTargets: [ImageFile] {
+        if mode == .viewer {
+            return catalog.selectedFile.map { [$0] } ?? []
+        }
+        return catalog.deletionTargets
+    }
+
+    public var canRate: Bool { !ratingTargets.isEmpty }
+
+    public func rating(for file: ImageFile) -> Int? {
+        ratings[file.url.standardizedFileURL.path]
+    }
+
+    /// 作用于当前目标：若全部已是该等级则清除，否则统一设为该等级。
+    public func setRating(_ level: Int) {
+        guard (1...5).contains(level) else { return }
+        let targets = ratingTargets
+        guard !targets.isEmpty else { return }
+        let allAtLevel = targets.allSatisfy { rating(for: $0) == level }
+        var next = ratings
+        for file in targets {
+            let key = file.url.standardizedFileURL.path
+            if allAtLevel {
+                next.removeValue(forKey: key)
+            } else {
+                next[key] = level
+            }
+        }
+        applyRatings(next)
+    }
+
+    public func clearRating() {
+        let targets = ratingTargets
+        guard !targets.isEmpty else { return }
+        var next = ratings
+        var changed = false
+        for file in targets {
+            if next.removeValue(forKey: file.url.standardizedFileURL.path) != nil {
+                changed = true
+            }
+        }
+        guard changed else { return }
+        applyRatings(next)
+    }
+
+    public func toggleRatingFilter(_ level: Int) {
+        guard (1...5).contains(level) else { return }
+        var next = catalog
+        if next.selectedRatings.contains(level) {
+            next.selectedRatings.remove(level)
+        } else {
+            next.selectedRatings.insert(level)
+        }
+        next.clampSelection()
+        catalog = next
+        leaveViewerIfNeeded()
+    }
+
+    public func toggleUnratedFilter() {
+        var next = catalog
+        next.includesUnrated.toggle()
+        next.clampSelection()
+        catalog = next
+        leaveViewerIfNeeded()
+    }
+
+    public func clearRatingFilter() {
+        var next = catalog
+        next.selectedRatings = []
+        next.includesUnrated = false
+        next.clampSelection()
+        catalog = next
+        leaveViewerIfNeeded()
+    }
+
+    private func applyRatings(_ next: [String: Int]) {
+        ratings = next
+        ratingStore.save(next)
+        var updated = catalog
+        updated.ratings = catalogRatings(for: updated.files)
+        updated.clampSelection()
+        catalog = updated
+        leaveViewerIfNeeded()
+    }
+
+    private func syncCatalogRatings() {
+        catalog.ratings = catalogRatings(for: catalog.files)
+    }
+
+    private func catalogRatings(for files: [ImageFile]) -> [URL: Int] {
+        var map: [URL: Int] = [:]
+        for file in files {
+            if let level = ratings[file.url.standardizedFileURL.path] {
+                map[file.url] = level
+            }
+        }
+        return map
     }
 
     public func select(url: URL, gesture: SelectionGesture = .only) {

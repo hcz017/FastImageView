@@ -16,8 +16,10 @@ struct ContentView: View {
     @State private var gridColumns = 1
     @State private var pendingSearchFocus = false
     @State private var formatMenuPresented = false
+    @State private var ratingMenuPresented = false
     @State private var captureSummary = ""
     @State private var showCaptureInfo = false
+    @StateObject private var ratingFeedback = RatingFeedbackModel()
     @State private var gifStarted = Date()
     @StateObject private var gifClip = GIFClip()
     @StateObject private var toasts = ToastModel()
@@ -131,6 +133,7 @@ struct ContentView: View {
         .onChange(of: model.mode) { _, mode in
             if mode != .grid {
                 formatMenuPresented = false
+                ratingMenuPresented = false
                 NSApp.keyWindow?.makeFirstResponder(nil)
             }
         }
@@ -139,8 +142,9 @@ struct ContentView: View {
                 scroll: $scroll,
                 model: model,
                 toasts: toasts,
+                ratingFeedback: ratingFeedback,
                 gridColumns: gridColumns,
-                formatMenuPresented: formatMenuPresented
+                filterMenuPresented: formatMenuPresented || ratingMenuPresented
             )
         }
         .alert("无法完成操作", isPresented: errorPresented) {
@@ -194,6 +198,7 @@ struct ContentView: View {
     private var gridToolbarItems: some View {
         if model.mode == .grid {
             formatMenu
+            ratingMenu
             if model.isScanning {
                 ProgressView()
                     .controlSize(.small)
@@ -228,9 +233,9 @@ struct ContentView: View {
             }
             ControlGroup {
                 Toggle("适合窗口", isOn: fitWindowToggle)
-                    .help("适合窗口 (0)")
+                    .help("适合窗口")
                 Toggle("实际像素", isOn: actualPixelsToggle)
-                    .help("实际像素 (1)")
+                    .help("实际像素")
                 Button {
                     showCaptureInfo.toggle()
                 } label: {
@@ -367,7 +372,7 @@ struct ContentView: View {
 
     private var formatMenuContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            FormatMenuRow(
+            FilterMenuRow(
                 title: "全部格式",
                 checked: model.catalog.selectedFormats.isEmpty,
                 enabled: !model.catalog.selectedFormats.isEmpty,
@@ -376,11 +381,62 @@ struct ContentView: View {
             Divider()
                 .padding(.vertical, theme.spacingXS)
             ForEach(model.catalog.availableFormats, id: \.self) { format in
-                FormatMenuRow(
+                FilterMenuRow(
                     title: format.badge,
                     checked: model.catalog.selectedFormats.contains(format),
                     enabled: true,
                     action: { model.toggleFormat(format) }
+                )
+            }
+        }
+        .padding(theme.spacingXS)
+        .frame(minWidth: theme.formatMenuWidth, alignment: .leading)
+    }
+
+    private var ratingMenu: some View {
+        Button {
+            ratingMenuPresented = true
+        } label: {
+            HStack(spacing: theme.spacingXS) {
+                Image(systemName: model.catalog.hasRatingFilter ? "star.circle.fill" : "star.circle")
+                Text("分级")
+                    .frame(minWidth: theme.formatMenuTitleMinWidth, alignment: .leading)
+            }
+        }
+        .fixedSize()
+        .help("按分级筛选")
+        .popover(isPresented: $ratingMenuPresented) {
+            ratingMenuContent
+        }
+        .accessibilityLabel("按分级筛选")
+        .accessibilityValue(model.catalog.hasRatingFilter ? "已启用筛选" : "未启用筛选")
+    }
+
+    private var ratingMenuContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FilterMenuRow(
+                title: "全部评级",
+                checked: !model.catalog.hasRatingFilter,
+                enabled: model.catalog.hasRatingFilter,
+                reservesRatingSlot: true,
+                action: model.clearRatingFilter
+            )
+            FilterMenuRow(
+                title: "未分级",
+                checked: model.catalog.includesUnrated,
+                enabled: true,
+                reservesRatingSlot: true,
+                action: model.toggleUnratedFilter
+            )
+            Divider()
+                .padding(.vertical, theme.spacingXS)
+            ForEach(1...5, id: \.self) { level in
+                FilterMenuRow(
+                    title: "\(level) 级",
+                    checked: model.catalog.selectedRatings.contains(level),
+                    enabled: true,
+                    ratingLevel: level,
+                    action: { model.toggleRatingFilter(level) }
                 )
             }
         }
@@ -424,6 +480,7 @@ struct ContentView: View {
     private func clearFilters() {
         model.setKeyword("")
         clearFormats()
+        model.clearRatingFilter()
     }
 
     private var keyword: Binding<String> {
@@ -499,6 +556,12 @@ struct ContentView: View {
             .clipShape(RoundedRectangle(cornerRadius: theme.radiusSmall))
             .overlay(alignment: .bottomLeading) {
                 formatBadge(file.format)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let level = model.rating(for: file) {
+                    RatingBadge(level: level)
+                        .padding(theme.spacingXS)
+                }
             }
             .overlay {
                 RoundedRectangle(cornerRadius: theme.radiusSmall)
@@ -590,6 +653,12 @@ struct ContentView: View {
         target.onTrash = {
             toasts.deleteSelection(in: model)
         }
+        target.onRate = { level in
+            model.setRating(level)
+        }
+        target.onClearRating = {
+            model.clearRating()
+        }
 
         let menu = NSMenu()
         menu.autoenablesItems = false
@@ -600,9 +669,62 @@ struct ContentView: View {
         addContextItem(menu, title: copy.filenames.count > 1 ? "拷贝 \(copy.filenames.count) 个文件名" : "拷贝文件名", action: #selector(ContextMenuTarget.copyNameAction(_:)), target: target)
         addContextItem(menu, title: copy.urls.count > 1 ? "拷贝 \(copy.urls.count) 张图片" : "拷贝图片", action: #selector(ContextMenuTarget.copyImageAction(_:)), target: target)
         addContextItem(menu, title: copy.paths.count > 1 ? "拷贝 \(copy.paths.count) 个路径" : "拷贝路径", action: #selector(ContextMenuTarget.copyPathAction(_:)), target: target)
+        addRatingSubmenu(to: menu, target: target, targets: model.catalog.deletionTargets)
         menu.addItem(.separator())
         addContextItem(menu, title: "移到废纸篓", action: #selector(ContextMenuTarget.trashAction(_:)), target: target)
         return menu
+    }
+
+    /// 网格右键的「分级」子菜单：多选且等级不一致时不勾选任何项。
+    private func addRatingSubmenu(to menu: NSMenu, target: ContextMenuTarget, targets: [ImageFile]) {
+        let levels = Set(targets.compactMap { model.rating(for: $0) })
+        let current = levels.count == 1 ? levels.first : nil
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for level in 1...5 {
+            let item = NSMenuItem(
+                title: "\(level) 级",
+                action: #selector(ContextMenuTarget.rateAction(_:)),
+                keyEquivalent: ""
+            )
+            item.target = target
+            item.tag = level
+            item.state = current == level ? .on : .off
+            submenu.addItem(item)
+        }
+        submenu.addItem(.separator())
+        let clear = NSMenuItem(
+            title: "清除分级",
+            action: #selector(ContextMenuTarget.clearRatingAction(_:)),
+            keyEquivalent: ""
+        )
+        clear.target = target
+        clear.isEnabled = !levels.isEmpty
+        submenu.addItem(clear)
+        let root = NSMenuItem(title: "分级", action: nil, keyEquivalent: "")
+        root.submenu = submenu
+        menu.addItem(root)
+    }
+
+    @ViewBuilder
+    private func ratingContextMenu(_ file: ImageFile) -> some View {
+        let current = model.rating(for: file)
+        Menu("分级") {
+            ForEach(1...5, id: \.self) { level in
+                Button {
+                    ratingFeedback.rate(level, in: model)
+                } label: {
+                    if current == level {
+                        Label("\(level) 级", systemImage: "checkmark")
+                    } else {
+                        Text("\(level) 级")
+                    }
+                }
+            }
+            Divider()
+            Button("清除分级") { ratingFeedback.clear(in: model) }
+                .disabled(current == nil)
+        }
     }
 
     private func addContextItem(_ menu: NSMenu, title: String, action: Selector, target: ContextMenuTarget) {
@@ -626,6 +748,7 @@ struct ContentView: View {
                 Button("拷贝文件名") { Clipboard.copyFilenames([file.filename]) }
                 Button("拷贝图片") { copyImages([file.url]) }
                 Button("拷贝路径") { Clipboard.copyPaths([file.url.path]) }
+                ratingContextMenu(file)
                 Divider()
                 Button("移到废纸篓", role: .destructive) {
                     toasts.deleteSelection(in: model)
@@ -636,6 +759,15 @@ struct ContentView: View {
             }
             .overlay(alignment: .trailing) {
                 viewerNavButton(previous: false, file: file)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if let feedback = ratingFeedback.current {
+                    RatingFeedbackBadge(level: feedback.level, clearing: feedback.clearing)
+                        .id(feedback.id)
+                        .padding(theme.spacingXL)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
             }
             .overlay(alignment: .topLeading) {
                 if showCaptureInfo, !captureSummary.isEmpty {
@@ -661,6 +793,7 @@ struct ContentView: View {
                 panOrigin = nil
                 captureSummary = ""
                 gifStarted = Date()
+                ratingFeedback.dismiss()
                 if let image = model.cachedViewerImage(file) {
                     retainedViewerImage = image
                 }
@@ -932,7 +1065,7 @@ struct ContentView: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(theme.badgeForeground(for: format))
             .padding(.horizontal, theme.spacingXS)
-            .padding(.vertical, theme.spacingXS)
+            .frame(height: theme.badgeHeight)
             .background(
                 theme.badgeBackground(for: format),
                 in: RoundedRectangle(cornerRadius: theme.radiusBadge)
@@ -977,6 +1110,88 @@ struct ContentView: View {
             .padding(.bottom, theme.spacingLG)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+}
+
+/// 大图右下角的分级反馈：设置时弹出黄色徽标，取消时先褪色再淡出。
+@MainActor
+private final class RatingFeedbackModel: ObservableObject {
+    struct Feedback: Identifiable, Equatable {
+        let id = UUID()
+        let level: Int
+        let clearing: Bool
+    }
+
+    @Published private(set) var current: Feedback?
+    private var dismissTask: Task<Void, Never>?
+
+    /// 设置分级；若目标本来已是该级，BrowserModel 会清除它，此时播放褪色动画。
+    func rate(_ level: Int, in model: BrowserModel) {
+        let previous = model.catalog.selectedFile.flatMap { model.rating(for: $0) }
+        model.setRating(level)
+        let updated = model.catalog.selectedFile.flatMap { model.rating(for: $0) }
+        if let updated {
+            show(Feedback(level: updated, clearing: false))
+        } else if let previous {
+            show(Feedback(level: previous, clearing: true))
+        }
+    }
+
+    func clear(in model: BrowserModel) {
+        let previous = model.catalog.selectedFile.flatMap { model.rating(for: $0) }
+        model.clearRating()
+        if let previous {
+            show(Feedback(level: previous, clearing: true))
+        }
+    }
+
+    func dismiss() {
+        dismissTask?.cancel()
+        current = nil
+    }
+
+    private func show(_ feedback: Feedback) {
+        dismissTask?.cancel()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.72)) {
+            current = feedback
+        }
+        let delay: UInt64 = feedback.clearing ? 1_100_000_000 : 900_000_000
+        dismissTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, self?.current?.id == feedback.id else { return }
+            withAnimation(.easeOut(duration: feedback.clearing ? 0.4 : 0.28)) {
+                self?.current = nil
+            }
+        }
+    }
+}
+
+/// 设置分级时弹入黄色徽标；取消分级时先褪色，再由外层淡出。
+private struct RatingFeedbackBadge: View {
+    @Environment(\.appTheme) private var theme
+    let level: Int
+    let clearing: Bool
+    @State private var appeared = false
+    @State private var desaturated = false
+
+    var body: some View {
+        RatingBadge(level: level, size: theme.ratingFeedbackSize)
+            .saturation(desaturated ? 0 : 1)
+            .scaleEffect(appeared ? 1 : 0.7)
+            .opacity(appeared ? 1 : 0)
+            .onAppear {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    appeared = true
+                }
+            }
+            .task(id: clearing) {
+                guard clearing else { return }
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    desaturated = true
+                }
+            }
+            .accessibilityLabel(clearing ? "已取消分级" : "分级 \(level)")
     }
 }
 
@@ -1025,18 +1240,27 @@ private final class ToastModel: ObservableObject {
     }
 }
 
-/// 格式筛选项：点击只切换勾选，不关闭面板。
-private struct FormatMenuRow: View {
+/// 筛选面板中的一行：点击只切换勾选，不关闭面板。
+private struct FilterMenuRow: View {
     @Environment(\.appTheme) private var theme
     let title: String
     let checked: Bool
     let enabled: Bool
+    var reservesRatingSlot = false
+    var ratingLevel: Int?
     let action: () -> Void
     @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: theme.spacingSM) {
+                if let ratingLevel {
+                    RatingBadge(level: ratingLevel, showsShadow: false)
+                    .accessibilityHidden(true)
+                } else if reservesRatingSlot {
+                    Color.clear
+                        .frame(width: theme.badgeHeight, height: theme.badgeHeight)
+                }
                 Text(title)
                     .foregroundStyle(.primary)
                 Spacer(minLength: theme.spacingSM)
@@ -1227,6 +1451,8 @@ private final class ContextMenuTarget: NSObject {
     var onCopyImage: (() -> Void)?
     var onCopyPath: (() -> Void)?
     var onTrash: (() -> Void)?
+    var onRate: ((Int) -> Void)?
+    var onClearRating: (() -> Void)?
 
     @objc func openAction(_ sender: Any?) { onOpen?() }
     @objc func revealAction(_ sender: Any?) { onReveal?() }
@@ -1234,14 +1460,17 @@ private final class ContextMenuTarget: NSObject {
     @objc func copyImageAction(_ sender: Any?) { onCopyImage?() }
     @objc func copyPathAction(_ sender: Any?) { onCopyPath?() }
     @objc func trashAction(_ sender: Any?) { onTrash?() }
+    @objc func rateAction(_ sender: NSMenuItem) { onRate?(sender.tag) }
+    @objc func clearRatingAction(_ sender: Any?) { onClearRating?() }
 }
 
 private struct EventMonitor: NSViewRepresentable {
     @Binding var scroll: ScrollAccumulator
     var model: BrowserModel
     var toasts: ToastModel
+    var ratingFeedback: RatingFeedbackModel
     var gridColumns: Int
-    var formatMenuPresented: Bool
+    var filterMenuPresented: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -1257,8 +1486,9 @@ private struct EventMonitor: NSViewRepresentable {
         context.coordinator.scroll = $scroll
         context.coordinator.model = model
         context.coordinator.toasts = toasts
+        context.coordinator.ratingFeedback = ratingFeedback
         context.coordinator.gridColumns = gridColumns
-        context.coordinator.formatMenuPresented = formatMenuPresented
+        context.coordinator.filterMenuPresented = filterMenuPresented
         nsView.coordinator = context.coordinator
     }
 
@@ -1267,16 +1497,18 @@ private struct EventMonitor: NSViewRepresentable {
         var scroll: Binding<ScrollAccumulator>?
         var model: BrowserModel?
         var toasts: ToastModel?
+        var ratingFeedback: RatingFeedbackModel?
         var gridColumns = 1
-        var formatMenuPresented = false
+        var filterMenuPresented = false
 
         func handleKeyDown(_ event: NSEvent) -> NSEvent? {
             guard let model else { return event }
-            // 格式面板打开时按键交给面板处理（Esc 关闭），不再驱动网格选择/打开/删除。
-            if formatMenuPresented { return event }
+            // 筛选面板打开时按键交给面板处理（Esc 关闭），不再驱动网格选择/打开/删除。
+            if filterMenuPresented { return event }
             let chord = KeyChord(
                 keyCode: event.keyCode,
                 command: event.modifierFlags.contains(.command),
+                shift: event.modifierFlags.contains(.shift),
                 charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? ""
             )
             let editingText = NSApp.keyWindow?.firstResponder is NSTextView
@@ -1307,6 +1539,16 @@ private struct EventMonitor: NSViewRepresentable {
             case .moveRow(let rows):
                 model.moveSelection(byRows: rows, columns: gridColumns, screenLongEdge: screenLongEdge())
                 return nil
+            case .setRating(let level):
+                if model.mode == .viewer {
+                    ratingFeedback?.rate(level, in: model)
+                } else {
+                    model.setRating(level)
+                }
+                return nil
+            case .toggleRatingFilter(let level):
+                model.toggleRatingFilter(level)
+                return nil
             case .focusSearch:
                 NotificationCenter.default.post(name: .focusSearchRequested, object: nil)
                 return nil
@@ -1316,12 +1558,6 @@ private struct EventMonitor: NSViewRepresentable {
                 return nil
             case .closeViewer:
                 model.closeViewer()
-                return nil
-            case .fit:
-                model.setFit(.fit, screenLongEdge: screenLongEdge())
-                return nil
-            case .actualPixels:
-                model.setFit(.actual, screenLongEdge: screenLongEdge())
                 return nil
             case .zoomIn:
                 model.zoom(by: ZoomMath.step, screenLongEdge: screenLongEdge())
