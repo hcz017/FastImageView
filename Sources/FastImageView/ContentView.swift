@@ -493,7 +493,6 @@ struct ContentView: View {
             HStack(spacing: theme.spacingXS) {
                 Image(systemName: model.catalog.hasRatingFilter ? "star.circle.fill" : "star.circle")
                 Text("分级")
-                    .frame(minWidth: theme.formatMenuTitleMinWidth, alignment: .leading)
             }
         }
         .fixedSize()
