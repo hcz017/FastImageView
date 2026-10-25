@@ -500,6 +500,54 @@ final class BrowserModelTests: XCTestCase {
         XCTAssertEqual(model.catalog.selectedFile?.filename, "b.jpg")
         XCTAssertEqual(model.catalog.selectionIDs, Set(files.map(\.url)))
         XCTAssertTrue(model.compareFiles.isEmpty)
+        XCTAssertTrue(model.canReturnToCompare)
+    }
+
+    func testReturnToCompareRestoresSnapshotAndThenExitsToGrid() {
+        let files = [file("a.jpg"), file("b.jpg"), file("c.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        model.setCompareZoomMultiple(2, screenLongEdge: 1800)
+
+        model.openViewerFromCompare(url: files[1].url, screenLongEdge: 1800)
+        XCTAssertTrue(model.returnToCompare(screenLongEdge: 1800))
+
+        XCTAssertEqual(model.mode, .compare)
+        XCTAssertEqual(model.compareFiles.map(\.filename), ["a.jpg", "b.jpg", "c.jpg"])
+        XCTAssertEqual(model.compareZoom, .multiple(2))
+        XCTAssertFalse(model.canReturnToCompare)
+
+        model.closeCompare()
+        XCTAssertEqual(model.mode, .grid)
+        XCTAssertEqual(model.catalog.selectionIDs, Set(files.map(\.url)))
+    }
+
+    func testViewerOpenedFromGridCannotReturnToCompare() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        model.select(url: files[0].url)
+        model.openViewer(screenLongEdge: 1800)
+
+        XCTAssertFalse(model.canReturnToCompare)
+        XCTAssertFalse(model.returnToCompare(screenLongEdge: 1800))
+        XCTAssertEqual(model.mode, .viewer)
+
+        model.closeViewer()
+        XCTAssertEqual(model.mode, .grid)
+        XCTAssertFalse(model.canReturnToCompare)
+    }
+
+    func testCloseViewerFromCompareDropsTheSnapshot() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        model.openViewerFromCompare(url: files[0].url, screenLongEdge: 1800)
+
+        model.closeViewer()
+        XCTAssertEqual(model.mode, .grid)
+        XCTAssertFalse(model.canReturnToCompare)
     }
 
     func testCompareFollowsFilteringAndExitsBelowTwo() {

@@ -47,6 +47,14 @@ public extension PreviewPipeline {
 @MainActor
 @Observable
 public final class BrowserModel {
+    /// 对比会话快照，用于从大图返回。
+    private struct CompareReturn {
+        var files: [ImageFile]
+        var sourceSizes: [URL: ImagePixelSize]
+        var zoom: ViewerZoom
+        var pan: ImagePan
+    }
+
     public private(set) var folderURL: URL?
     public var pendingFolderURL: URL?
     public private(set) var catalog = ImageCatalog()
@@ -60,6 +68,8 @@ public final class BrowserModel {
     public private(set) var comparePan = ImagePan.zero
     public private(set) var compareLayouts: [URL: ViewerLayout] = [:]
     private var compareSourceSizes: [URL: ImagePixelSize] = [:]
+    /// 从对比进入大图时暂存的会话，供返回按钮与 Esc 恢复。
+    private var compareReturn: CompareReturn?
     public private(set) var viewerLayout: ViewerLayout?
     public private(set) var viewerSourceSize: ImagePixelSize?
     public private(set) var screenLongEdge = 1800
@@ -177,6 +187,9 @@ public final class BrowserModel {
 
     public var canOpenCompare: Bool { (2...3).contains(compareCandidateFiles.count) }
 
+    /// 大图是否由对比模式进入，可返回对比。
+    public var canReturnToCompare: Bool { mode == .viewer && compareReturn != nil }
+
     public func compareSourceSize(for file: ImageFile) -> ImagePixelSize? {
         compareSourceSizes[file.url]
     }
@@ -235,6 +248,7 @@ public final class BrowserModel {
 
     public func closeCompare() {
         if mode == .compare { mode = .grid }
+        compareReturn = nil
         compareFiles = []
         compareSourceSizes = [:]
         compareZoom = .fit
@@ -248,11 +262,36 @@ public final class BrowserModel {
         var next = catalog
         next.focus(url: url)
         catalog = next
+        let snapshot = CompareReturn(
+            files: compareFiles,
+            sourceSizes: compareSourceSizes,
+            zoom: compareZoom,
+            pan: comparePan
+        )
         closeCompare()
+        compareReturn = snapshot
         zoom = .fit
         pan = .zero
         mode = .viewer
         refreshViewer()
+    }
+
+    /// 从大图返回对比；仅当本次大图由对比进入时有效。
+    @discardableResult
+    public func returnToCompare(screenLongEdge: Int) -> Bool {
+        guard mode == .viewer, let snapshot = compareReturn else { return false }
+        self.screenLongEdge = screenLongEdge
+        compareReturn = nil
+        compareFiles = snapshot.files
+        compareSourceSizes = snapshot.sourceSizes
+        compareZoom = snapshot.zoom
+        comparePan = snapshot.pan
+        compareLayouts = [:]
+        viewerSourceSize = nil
+        viewerSourceURL = nil
+        mode = .compare
+        refreshCompareImages()
+        return true
     }
 
     public func setCompareFit(_ fit: ViewerFit, screenLongEdge: Int) {
@@ -731,6 +770,7 @@ public final class BrowserModel {
 
     public func openViewer(screenLongEdge: Int) {
         guard catalog.selectedFile != nil else { return }
+        compareReturn = nil
         if mode == .compare { closeCompare() }
         self.screenLongEdge = screenLongEdge
         zoom = .fit
@@ -741,6 +781,7 @@ public final class BrowserModel {
 
     public func closeViewer() {
         if mode == .viewer { mode = .grid }
+        compareReturn = nil
         viewerSourceSize = nil
         viewerSourceURL = nil
     }
@@ -844,6 +885,7 @@ public final class BrowserModel {
             undoStack.append(UndoEntry(files: trashedFiles, trashURLs: trashURLs))
         }
         guard !removed.isEmpty else { return }
+        compareReturn = nil
         var next = catalog
         _ = next.remove(urls: removed)
         catalog = next
@@ -951,6 +993,7 @@ public final class BrowserModel {
 
     private func leaveViewerIfNeeded() {
         if mode == .viewer && catalog.selectedFile == nil {
+            compareReturn = nil
             mode = .grid
         } else if mode == .compare {
             refreshCompare()

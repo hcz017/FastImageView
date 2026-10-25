@@ -52,10 +52,12 @@ struct ContentView: View {
             ToolbarItemGroup(placement: .navigation) {
                 if model.mode == .viewer || model.mode == .compare {
                     Button {
-                        if model.mode == .viewer {
-                            model.closeViewer()
-                        } else {
+                        if model.mode == .compare {
                             model.closeCompare()
+                        } else if model.canReturnToCompare {
+                            model.returnToCompare(screenLongEdge: screenLongEdge())
+                        } else {
+                            model.closeViewer()
                         }
                     } label: {
                         Label("返回", systemImage: "chevron.backward")
@@ -859,9 +861,6 @@ struct ContentView: View {
             .contentShape(Rectangle())
             .gesture(compareDrag)
             .onTapGesture(count: 2) {
-                model.setCompareFit(model.compareZoom == .fit ? .actual : .fit, screenLongEdge: screenLongEdge())
-            }
-            .onTapGesture {
                 model.openViewerFromCompare(url: file.url, screenLongEdge: screenLongEdge())
             }
             .onAppear {
@@ -1821,6 +1820,8 @@ private struct EventMonitor: NSViewRepresentable {
             case .closeViewer:
                 if model.mode == .compare {
                     model.closeCompare()
+                } else if model.canReturnToCompare {
+                    model.returnToCompare(screenLongEdge: screenLongEdge())
                 } else {
                     model.closeViewer()
                 }
