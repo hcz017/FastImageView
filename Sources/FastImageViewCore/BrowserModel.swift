@@ -93,7 +93,16 @@ public final class BrowserModel {
     private let scanner: any FolderScanning
     private let deletion: DeletionService
     private let previews: any PreviewPipeline
+    private let cloudDownloader: any CloudDownloading
     private let imageIO = ImageIOThumbnailDecoder()
+    /// 正在下载（含排队）的云盘文件，供界面显示「下载中…」。
+    public private(set) var cloudDownloadingURLs = Set<URL>()
+    private var activeCloudURLs = Set<URL>()
+    private var queuedCloudURLs: [URL] = []
+    private var cloudStartedAt: [URL: Date] = [:]
+    private var cloudPollTask: Task<Void, Never>?
+    private let cloudDownloadLimit = 4
+    private let cloudDownloadTimeout: TimeInterval = 300
 
     public init(
         scanner: any FolderScanning,
@@ -102,7 +111,8 @@ public final class BrowserModel {
         recentFolders: RecentFolderList = RecentFolderList(),
         recentDefaults: UserDefaults? = nil,
         folderWatch: any FolderWatching = IdleFolderWatch(),
-        ratingStore: any RatingStoring = InMemoryRatingStore()
+        ratingStore: any RatingStoring = InMemoryRatingStore(),
+        cloudDownloader: any CloudDownloading = UbiquitousDownloader()
     ) {
         self.scanner = scanner
         self.deletion = deletion
@@ -112,6 +122,7 @@ public final class BrowserModel {
         self.recentDefaults = recentDefaults
         self.folderWatch = folderWatch
         self.ratingStore = ratingStore
+        self.cloudDownloader = cloudDownloader
         self.ratings = ratingStore.load()
         self.renderGeneration = previews.generation
         previews.onGenerationChange = { [weak self] in
@@ -235,7 +246,8 @@ public final class BrowserModel {
         compareFiles = files
         compareSourceSizes = Dictionary(
             uniqueKeysWithValues: files.compactMap { file in
-                imageIO.pixelSize(url: file.url).map { (file.url, $0) }
+                guard file.iCloudState != .notDownloaded else { return nil }
+                return imageIO.pixelSize(url: file.url).map { (file.url, $0) }
             }
         )
         compareZoom = .fit
@@ -389,6 +401,9 @@ public final class BrowserModel {
 
     private func refreshCompareImages() {
         guard !compareFiles.isEmpty else { return }
+        for file in compareFiles where file.iCloudState == .notDownloaded {
+            requestCloudDownload(file)
+        }
         previews.showCompare(files: compareFiles, maxPixelSize: compareMaxPixel)
     }
 
@@ -421,6 +436,7 @@ public final class BrowserModel {
     public func beginOpen() -> Int {
         generation += 1
         isScanning = true
+        resetCloudDownloads()
         return generation
     }
 
@@ -921,6 +937,7 @@ public final class BrowserModel {
         catalog = next
         for url in removed {
             previews.cancel(url: url)
+            cancelCloudDownload(url)
         }
         if mode == .viewer && catalog.selectedFile == nil { mode = .grid }
         else if mode == .viewer { refreshViewer() }
@@ -974,12 +991,157 @@ public final class BrowserModel {
     }
 
     public func thumbnailRequest(_ file: ImageFile) {
-        guard file.iCloudState != .notDownloaded else { return }
+        guard file.iCloudState != .notDownloaded else {
+            requestCloudDownload(file)
+            return
+        }
         previews.requestThumbnail(file: file)
     }
 
     public func thumbnailRelease(_ file: ImageFile) {
         previews.cancelQueuedThumbnail(url: file.url)
+        guard !activeCloudURLs.contains(file.url) else { return }
+        guard !isCloudNeededByViewer(file.url) else { return }
+        queuedCloudURLs.removeAll { $0 == file.url }
+        cloudDownloadingURLs.remove(file.url)
+    }
+
+    /// 大图与对比模式下仍在使用的文件不应因网格 cell 消失而取消排队。
+    private func isCloudNeededByViewer(_ url: URL) -> Bool {
+        if mode == .viewer, catalog.selectedFile?.url == url { return true }
+        if mode == .compare, compareFiles.contains(where: { $0.url == url }) { return true }
+        return false
+    }
+
+    public func isCloudDownloading(_ url: URL) -> Bool {
+        cloudDownloadingURLs.contains(url)
+    }
+
+    /// 可见的未下载文件自动请求下载，完成后轮询状态并补做解码。
+    private func requestCloudDownload(_ file: ImageFile) {
+        let url = file.url
+        guard file.iCloudState == .notDownloaded else { return }
+        guard !cloudDownloadingURLs.contains(url) else { return }
+        // 状态可能已被访达或网盘客户端刷新，先复查再决定是否需要下载。
+        if let state = cloudDownloader.state(of: url), state != .notDownloaded {
+            applyDownloadedState(url)
+            return
+        }
+        cloudDownloadingURLs.insert(url)
+        if activeCloudURLs.count < cloudDownloadLimit {
+            startCloudDownload(url)
+        } else {
+            queuedCloudURLs.append(url)
+        }
+        ensureCloudPolling()
+    }
+
+    private func startCloudDownload(_ url: URL) {
+        cloudStartedAt[url] = Date()
+        guard cloudDownloader.requestDownload(url: url) else {
+            abandonCloudDownload(url)
+            return
+        }
+        activeCloudURLs.insert(url)
+    }
+
+    private func abandonCloudDownload(_ url: URL) {
+        activeCloudURLs.remove(url)
+        queuedCloudURLs.removeAll { $0 == url }
+        cloudDownloadingURLs.remove(url)
+        cloudStartedAt.removeValue(forKey: url)
+        fillCloudSlots()
+    }
+
+    /// 空出并发槽位后启动排队中的下载。
+    private func fillCloudSlots() {
+        while activeCloudURLs.count < cloudDownloadLimit, !queuedCloudURLs.isEmpty {
+            let url = queuedCloudURLs.removeFirst()
+            guard cloudDownloadingURLs.contains(url) else { continue }
+            startCloudDownload(url)
+        }
+    }
+
+    /// 轮询一次下载状态；测试可直接调用，无需等待定时器。
+    func pollCloudDownloads() {
+        let now = Date()
+        for url in activeCloudURLs {
+            guard let state = cloudDownloader.state(of: url) else { continue }
+            if state != .notDownloaded {
+                finishCloudDownload(url)
+            } else if let started = cloudStartedAt[url], now.timeIntervalSince(started) > cloudDownloadTimeout {
+                abandonCloudDownload(url)
+            }
+        }
+        fillCloudSlots()
+        if cloudDownloadingURLs.isEmpty {
+            cloudPollTask?.cancel()
+            cloudPollTask = nil
+        }
+    }
+
+    private func finishCloudDownload(_ url: URL) {
+        activeCloudURLs.remove(url)
+        cloudStartedAt.removeValue(forKey: url)
+        cloudDownloadingURLs.remove(url)
+        applyDownloadedState(url)
+        fillCloudSlots()
+    }
+
+    /// 下载完成后把新状态写回目录，重新请求缩略图，并刷新大图/对比。
+    private func applyDownloadedState(_ url: URL) {
+        var updatedFile: ImageFile?
+        var next = catalog
+        if let index = next.files.firstIndex(where: { $0.url == url }) {
+            next.files[index].iCloudState = .downloaded
+            updatedFile = next.files[index]
+            catalog = next
+        }
+        if let index = compareFiles.firstIndex(where: { $0.url == url }) {
+            var nextCompare = compareFiles
+            nextCompare[index].iCloudState = .downloaded
+            compareFiles = nextCompare
+            if let size = imageIO.pixelSize(url: url) {
+                compareSourceSizes[url] = size
+            }
+        }
+        guard let updatedFile else { return }
+        previews.requestThumbnail(file: updatedFile)
+        if mode == .viewer, catalog.selectedFile?.url == url {
+            refreshViewer()
+        } else if mode == .compare, compareFiles.contains(where: { $0.url == url }) {
+            refreshCompareImages()
+        }
+    }
+
+    private func ensureCloudPolling() {
+        guard cloudPollTask == nil, !cloudDownloadingURLs.isEmpty else { return }
+        cloudPollTask = Task { @MainActor [weak self] in
+            while let self, !Task.isCancelled, !self.cloudDownloadingURLs.isEmpty {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                self.pollCloudDownloads()
+            }
+            self?.cloudPollTask = nil
+        }
+    }
+
+    private func resetCloudDownloads() {
+        cloudPollTask?.cancel()
+        cloudPollTask = nil
+        cloudDownloadingURLs.removeAll()
+        activeCloudURLs.removeAll()
+        queuedCloudURLs.removeAll()
+        cloudStartedAt.removeAll()
+    }
+
+    private func cancelCloudDownload(_ url: URL) {
+        if activeCloudURLs.contains(url) {
+            abandonCloudDownload(url)
+        } else {
+            queuedCloudURLs.removeAll { $0 == url }
+            cloudDownloadingURLs.remove(url)
+        }
     }
 
     public func noteUnavailable(_ url: URL) {
@@ -1037,12 +1199,17 @@ public final class BrowserModel {
         let index = items.firstIndex(where: { $0.url == current.url })
         let previous = index.flatMap { $0 > 0 ? items[$0 - 1] : nil }
         let next = index.flatMap { $0 + 1 < items.count ? items[$0 + 1] : nil }
+        for file in [current] + [previous, next].compactMap({ $0 }) where file.iCloudState == .notDownloaded {
+            requestCloudDownload(file)
+        }
         let pixels = PreviewMaxPixel.viewer(zoom: zoom, screenLongEdge: screenLongEdge)
         previews.showViewer(current: current, previous: previous, next: next, maxPixelSize: pixels)
     }
 
     private func rememberViewerSourceSize(for url: URL) {
         if viewerSourceURL == url, viewerSourceSize != nil { return }
+        guard let file = catalog.files.first(where: { $0.url == url }),
+              file.iCloudState != .notDownloaded else { return }
         viewerSourceURL = url
         viewerSourceSize = imageIO.pixelSize(url: url)
     }

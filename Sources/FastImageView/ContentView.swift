@@ -897,8 +897,13 @@ struct ContentView: View {
     @ViewBuilder
     private func compareContent(_ file: ImageFile, metrics: CGSize) -> some View {
         if file.iCloudState == .notDownloaded {
-            StatePlaceholder(icon: "icloud.and.arrow.down", message: "未下载")
-                .frame(width: metrics.width, height: metrics.height)
+            if model.isCloudDownloading(file.url) {
+                StatePlaceholder(icon: "arrow.down.circle", message: "下载中…")
+                    .frame(width: metrics.width, height: metrics.height)
+            } else {
+                StatePlaceholder(icon: "icloud.and.arrow.down", message: "未下载")
+                    .frame(width: metrics.width, height: metrics.height)
+            }
         } else if model.failed(file.url) {
             StatePlaceholder(icon: "exclamationmark.triangle", message: "无法打开")
                 .frame(width: metrics.width, height: metrics.height)
@@ -1096,7 +1101,11 @@ struct ContentView: View {
     @ViewBuilder
     private func viewerContent(_ file: ImageFile) -> some View {
         if file.iCloudState == .notDownloaded {
-            StatePlaceholder(icon: "icloud.and.arrow.down", message: "未下载")
+            if model.isCloudDownloading(file.url) {
+                StatePlaceholder(icon: "arrow.down.circle", message: "下载中…")
+            } else {
+                StatePlaceholder(icon: "icloud.and.arrow.down", message: "未下载")
+            }
         } else if model.failed(file.url) {
             StatePlaceholder(icon: "exclamationmark.triangle", message: "无法打开")
                 .onAppear { model.noteUnavailable(file.url) }
@@ -1296,7 +1305,7 @@ struct ContentView: View {
     @ViewBuilder
     private func thumbnailContent(_ file: ImageFile) -> some View {
         if file.iCloudState == .notDownloaded {
-            thumbnailLabel("未下载")
+            thumbnailLabel(model.isCloudDownloading(file.url) ? "下载中…" : "未下载")
         } else if let image = model.cachedThumbnail(file) {
             Image(decorative: image, scale: 1).resizable().scaledToFit()
         } else if model.failed(file.url) {

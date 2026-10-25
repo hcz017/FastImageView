@@ -142,10 +142,11 @@ public final class LivePreviewPipeline: PreviewPipeline {
         var wantedPixels: [URL: Int] = [:]
         var jobs: [(file: ImageFile, pixels: Int, priority: PreviewPriority)] = []
         for (index, file) in candidates.enumerated() {
+            guard file.iCloudState != .notDownloaded else { continue }
             let pixels = resolvedPixelSize(file: file, requested: maxPixelSize)
             if viewers.image(url: file.url, maxPixelSize: pixels, modified: file.modificationDate) != nil {
                 viewerPixels[file.url] = pixels
-            } else if file.iCloudState != .notDownloaded {
+            } else {
                 wantedPixels[file.url] = pixels
                 jobs.append((file, pixels, index == 0 ? .current : .prefetch))
             }
@@ -170,10 +171,11 @@ public final class LivePreviewPipeline: PreviewPipeline {
         var wantedPixels: [URL: Int] = [:]
         var jobs: [(file: ImageFile, pixels: Int)] = []
         for file in files {
+            guard file.iCloudState != .notDownloaded else { continue }
             let pixels = resolvedPixelSize(file: file, requested: maxPixelSize)
             if viewers.image(url: file.url, maxPixelSize: pixels, modified: file.modificationDate) != nil {
                 viewerPixels[file.url] = pixels
-            } else if file.iCloudState != .notDownloaded {
+            } else {
                 wantedPixels[file.url] = pixels
                 jobs.append((file, pixels))
             }
