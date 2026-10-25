@@ -72,7 +72,8 @@ enum Clipboard {
             return image
         }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options = ImageIOThumbnailOptions.dictionary(maxPixelSize: 4096) as CFDictionary
+        let isRaw = ImageFormat.from(filename: url.lastPathComponent)?.isRaw ?? false
+        let options = ImageIOThumbnailOptions.dictionary(maxPixelSize: 4096, isRaw: isRaw) as CFDictionary
         guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
         return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
     }

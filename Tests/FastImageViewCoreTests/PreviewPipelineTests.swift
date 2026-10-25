@@ -16,8 +16,14 @@ final class PreviewPipelineTests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["FASTIMAGEVIEW_NEF_FIXTURE"] else {
             throw XCTSkip("FASTIMAGEVIEW_NEF_FIXTURE 未设置")
         }
-        let image = try XCTUnwrap(ImageIOThumbnailDecoder().thumbnail(url: URL(fileURLWithPath: path), maxPixelSize: 16384))
-        XCTAssertLessThanOrEqual(max(image.width, image.height), 16384)
+        let url = URL(fileURLWithPath: path)
+        let decoder = ImageIOThumbnailDecoder()
+        let fit = try XCTUnwrap(decoder.thumbnail(url: url, maxPixelSize: 900, isRaw: true))
+        let zoomed = try XCTUnwrap(decoder.thumbnail(url: url, maxPixelSize: 16384, isRaw: true))
+        XCTAssertLessThanOrEqual(max(zoomed.width, zoomed.height), 16384)
+        // RAW 必须始终走内嵌预览，否则 ImageIO 会按请求尺寸切换渲染路径，缩放时颜色跳变。
+        XCTAssertEqual(fit.colorSpace?.name as String?, zoomed.colorSpace?.name as String?)
+        XCTAssertEqual(fit.bitsPerComponent, zoomed.bitsPerComponent)
     }
 
     func testStaleEpochDropsThumbnail() {

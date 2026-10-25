@@ -13,9 +13,17 @@ final class PreviewSizingTests: XCTestCase {
     func testOptionsAskOnlyForAThumbnail() {
         let raw = ImageIOThumbnailOptions.dictionary(maxPixelSize: 400)
         XCTAssertEqual(raw[kCGImageSourceCreateThumbnailFromImageAlways] as? Bool, true)
+        XCTAssertNil(raw[kCGImageSourceCreateThumbnailFromImageIfAbsent])
         XCTAssertEqual(raw[kCGImageSourceCreateThumbnailWithTransform] as? Bool, true)
         XCTAssertEqual(raw[kCGImageSourceThumbnailMaxPixelSize] as? Int, 400)
         XCTAssertEqual(raw[kCGImageSourceShouldCacheImmediately] as? Bool, true)
         XCTAssertNil(raw[kCGImageSourceShouldAllowFloat] )
+    }
+
+    func testRawOptionsPreferEmbeddedPreview() {
+        let raw = ImageIOThumbnailOptions.dictionary(maxPixelSize: 16384, isRaw: true)
+        XCTAssertEqual(raw[kCGImageSourceCreateThumbnailFromImageIfAbsent] as? Bool, true)
+        XCTAssertNil(raw[kCGImageSourceCreateThumbnailFromImageAlways])
+        XCTAssertEqual(raw[kCGImageSourceThumbnailMaxPixelSize] as? Int, 16384)
     }
 }

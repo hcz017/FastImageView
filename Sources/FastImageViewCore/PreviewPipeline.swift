@@ -5,12 +5,12 @@ import ImageIO
 public struct ImageIOThumbnailDecoder: Sendable {
     public init() {}
 
-    public func thumbnail(url: URL, maxPixelSize: Int) -> CGImage? {
+    public func thumbnail(url: URL, maxPixelSize: Int, isRaw: Bool = false) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         return CGImageSourceCreateThumbnailAtIndex(
             source,
             ImageIOThumbnailOptions.imageIndex,
-            ImageIOThumbnailOptions.dictionary(maxPixelSize: maxPixelSize) as CFDictionary
+            ImageIOThumbnailOptions.dictionary(maxPixelSize: maxPixelSize, isRaw: isRaw) as CFDictionary
         )
     }
 
@@ -166,13 +166,26 @@ public final class LivePreviewPipeline: PreviewPipeline {
         for job in scheduler.yieldQueuedThumbnails() {
             untrackQueued(id: job.id, url: job.url)
         }
-        let wanted = Set(files.map(\.url))
-        for job in scheduler.dropQueuedViewerJobs(keeping: wanted) {
+
+        var wantedPixels: [URL: Int] = [:]
+        var jobs: [(file: ImageFile, pixels: Int)] = []
+        for file in files {
+            let pixels = resolvedPixelSize(file: file, requested: maxPixelSize)
+            if viewers.image(url: file.url, maxPixelSize: pixels, modified: file.modificationDate) != nil {
+                viewerPixels[file.url] = pixels
+            } else if file.iCloudState != .notDownloaded {
+                wantedPixels[file.url] = pixels
+                jobs.append((file, pixels))
+            }
+        }
+
+        for job in scheduler.dropQueuedViewerJobs(keeping: wantedPixels) {
             untrackQueued(id: job.id, url: job.url)
         }
-        wantedViewerURLs = wanted
-        for file in files {
-            enqueueViewer(file, maxPixelSize: resolvedPixelSize(file: file, requested: maxPixelSize), priority: .current)
+        wantedViewerURLs = Set(wantedPixels.keys)
+
+        for job in jobs {
+            enqueueViewer(job.file, maxPixelSize: job.pixels, priority: .current)
         }
         pump()
     }
@@ -234,13 +247,14 @@ public final class LivePreviewPipeline: PreviewPipeline {
             Task.detached { [decoder] in
                 let image: CGImage?
                 var loadedFromDisk = false
+                let isRaw = ImageFormat.from(filename: job.url.lastPathComponent)?.isRaw ?? false
                 if priority == .thumbnail,
                    let disk,
                    let cached = disk.image(path: path, maxPixelSize: job.maxPixelSize, modified: modified) {
                     image = cached
                     loadedFromDisk = true
                 } else {
-                    image = decoder.thumbnail(url: job.url, maxPixelSize: job.maxPixelSize)
+                    image = decoder.thumbnail(url: job.url, maxPixelSize: job.maxPixelSize, isRaw: isRaw)
                 }
                 if priority == .thumbnail, let image, !loadedFromDisk, FileManager.default.fileExists(atPath: path) {
                     disk?.store(path: path, maxPixelSize: job.maxPixelSize, modified: modified, image: image)

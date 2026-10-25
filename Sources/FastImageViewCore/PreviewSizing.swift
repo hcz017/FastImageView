@@ -37,12 +37,18 @@ public enum PreviewMaxPixel {
 public enum ImageIOThumbnailOptions {
     public static let imageIndex = 0
 
-    public static func dictionary(maxPixelSize: Int) -> [CFString: Any] {
-        [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
+    /// - Parameter isRaw: 相机原片只走内嵌 JPEG 预览，避免全尺寸 RAW 解码。
+    public static func dictionary(maxPixelSize: Int, isRaw: Bool = false) -> [CFString: Any] {
+        var options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
             kCGImageSourceShouldCacheImmediately: true
         ]
+        // RAW 用 `FromImageIfAbsent` 优先取内嵌预览：`FromImageAlways` 会按请求尺寸
+        // 走不同的 RAW 渲染路径（8-bit P3 / 8-bit sRGB / 16-bit），缩放时颜色会跳变。
+        options[isRaw
+            ? kCGImageSourceCreateThumbnailFromImageIfAbsent
+            : kCGImageSourceCreateThumbnailFromImageAlways] = true
+        return options
     }
 }
