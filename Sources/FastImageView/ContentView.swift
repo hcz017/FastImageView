@@ -252,16 +252,19 @@ struct ContentView: View {
                 .accessibilityLabel("放大")
             }
             ControlGroup {
-                Toggle("适合窗口", isOn: fitWindowToggle)
-                    .help("适合窗口")
-                Toggle("实际像素", isOn: actualPixelsToggle)
-                    .help("实际像素")
+                Picker("显示方式", selection: fitPickerSelection) {
+                    Text("适合").tag(Optional(ViewerFit.fit))
+                    Text("100%").tag(Optional(ViewerFit.actual))
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .help("适合窗口 (0) / 实际像素 (1)")
+                .accessibilityLabel("显示方式")
                 Button {
                     showCaptureInfo.toggle()
                 } label: {
-                    Label("图片信息", systemImage: showCaptureInfo ? "info.circle.fill" : "info.circle")
+                    Image(systemName: showCaptureInfo ? "info.circle.fill" : "info.circle")
                 }
-                .labelStyle(.titleAndIcon)
                 .help(showCaptureInfo ? "隐藏图片信息 (I)" : "显示图片信息 (I)")
                 .accessibilityLabel("图片信息")
                 .accessibilityValue(showCaptureInfo ? "显示中" : "已隐藏")
@@ -339,21 +342,21 @@ struct ContentView: View {
         }
     }
 
-    /// 自定义缩放（⌘±、捏合、滚轮）时两个开关都不亮，符合实际状态。
-    private var fitWindowToggle: Binding<Bool> {
-        Binding(
-            get: { model.zoom == .fit },
-            set: { if $0 { model.setFit(.fit, screenLongEdge: screenLongEdge()) } }
-        )
-    }
-
-    private var actualPixelsToggle: Binding<Bool> {
+    /// 分段控件只覆盖「适合 / 实际像素」两种状态；自定义缩放（⌘±、捏合、滚轮）
+    /// 返回 nil，两个分段都不高亮，由左侧的缩放百分比标签说明当前比例。
+    private var fitPickerSelection: Binding<ViewerFit?> {
         Binding(
             get: {
-                if case .actual = model.zoom { return true }
-                return false
+                switch model.zoom {
+                case .fit: return .fit
+                case .actual: return .actual
+                case .multiple: return nil
+                }
             },
-            set: { if $0 { model.setFit(.actual, screenLongEdge: screenLongEdge()) } }
+            set: { fit in
+                guard let fit else { return }
+                model.setFit(fit, screenLongEdge: screenLongEdge())
+            }
         )
     }
 
