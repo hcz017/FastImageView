@@ -616,6 +616,66 @@ final class BrowserModelTests: XCTestCase {
         XCTAssertEqual(model.comparePan, .zero)
     }
 
+    func testComparePinchNeverShrinksBelowFit() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+
+        model.applyCompareMagnification(-0.5, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .fit)
+        XCTAssertEqual(model.comparePan, .zero)
+
+        model.applyCompareScrollZoom(-40, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .fit)
+    }
+
+    func testComparePinchStaysContinuousJustAboveFit() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+
+        model.applyCompareMagnification(0.01, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .multiple(1.01))
+        XCTAssertEqual(model.compareZoomLabel, "101%")
+    }
+
+    func testComparePinchOutFromMultipleStopsAtFit() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        model.setCompareZoomMultiple(1.2, screenLongEdge: 1800)
+
+        model.applyCompareMagnification(-0.5, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .fit)
+        XCTAssertEqual(model.comparePan, .zero)
+    }
+
+    func testComparePinchFromActualWaitsForLayoutsThenZooms() {
+        let files = [file("a.jpg"), file("b.jpg")]
+        let (model, _) = openedRatedModel(files: files)
+        selected(model, files: files)
+        XCTAssertTrue(model.openCompare(screenLongEdge: 1800))
+        model.setCompareFit(.actual, screenLongEdge: 1800)
+
+        // 布局尚未发布时不能把 100% 误判成 1 倍，否则会先缩回「适合」。
+        model.applyCompareMagnification(0.25, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .actual)
+
+        model.noteCompareLayout(
+            url: files[0].url,
+            layout: ViewerLayout(contentWidth: 4000, contentHeight: 3000, viewportWidth: 1000, viewportHeight: 1000, fitScale: 0.25)
+        )
+        model.noteCompareLayout(
+            url: files[1].url,
+            layout: ViewerLayout(contentWidth: 3000, contentHeight: 2000, viewportWidth: 1000, viewportHeight: 1000, fitScale: 0.33)
+        )
+        model.applyCompareMagnification(0.25, screenLongEdge: 1800)
+        XCTAssertEqual(model.compareZoom, .multiple(5))
+    }
+
     func testCompareRatingTargetsAreEmpty() {
         let files = [file("a.jpg"), file("b.jpg")]
         let (model, _) = openedRatedModel(files: files)

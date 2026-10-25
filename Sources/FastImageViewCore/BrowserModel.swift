@@ -323,19 +323,49 @@ public final class BrowserModel {
     }
 
     public func applyCompareMagnification(_ magnification: Double, screenLongEdge: Int) {
-        let fitScale = compareLayouts.values.map(\.fitScale).min() ?? 1
-        setCompareZoomMultiple(
-            ZoomMath.applyingMagnify(multiple: compareMultiple(fitScale: fitScale), magnification: magnification),
+        guard let current = compareGestureMultiple else { return }
+        setCompareGestureMultiple(
+            ZoomMath.applyingMagnify(multiple: current, magnification: magnification),
             screenLongEdge: screenLongEdge
         )
     }
 
     public func applyCompareScrollZoom(_ deltaY: Double, screenLongEdge: Int) {
-        let fitScale = compareLayouts.values.map(\.fitScale).min() ?? 1
-        setCompareZoomMultiple(
-            ZoomMath.applyingScroll(multiple: compareMultiple(fitScale: fitScale), deltaY: deltaY),
+        guard let current = compareGestureMultiple else { return }
+        setCompareGestureMultiple(
+            ZoomMath.applyingScroll(multiple: current, deltaY: deltaY),
             screenLongEdge: screenLongEdge
         )
+    }
+
+    /// 手势缩放基于当前倍率；`actual` 需要各格布局才能换算成共享倍率。
+    private var compareGestureMultiple: Double? {
+        switch compareZoom {
+        case .fit:
+            return 1
+        case .actual:
+            guard let fitScale = compareLayouts.values.map(\.fitScale).min() else { return nil }
+            return ZoomMath.actualMultiple(fitScale: fitScale)
+        case .multiple(let value):
+            return value
+        }
+    }
+
+    /// 连续手势缩放以「适合」为下限，且不在 1 附近吸附回 `.fit`，
+    /// 否则捏合初期的负向抖动会让画面先缩到比当前更小。
+    private func setCompareGestureMultiple(_ raw: Double, screenLongEdge: Int) {
+        guard mode == .compare else { return }
+        self.screenLongEdge = screenLongEdge
+        let previous = compareMaxPixel
+        let clamped = ZoomMath.clamp(raw)
+        if clamped <= 1 {
+            compareZoom = .fit
+            comparePan = .zero
+        } else {
+            compareZoom = .multiple(clamped)
+            reclampComparePan()
+        }
+        if previous != compareMaxPixel { refreshCompareImages() }
     }
 
     public func noteCompareLayout(url: URL, layout: ViewerLayout) {

@@ -1871,7 +1871,10 @@ private struct EventMonitor: NSViewRepresentable {
             guard let model, let scroll else { return event }
             if model.mode == .compare {
                 if event.modifierFlags.contains(.command) {
-                    model.applyCompareScrollZoom(event.scrollingDeltaY, screenLongEdge: screenLongEdge())
+                    // 惯性事件会带上一段手势的余量，混进缩放会突然改变倍率。
+                    if event.momentumPhase.isEmpty {
+                        model.applyCompareScrollZoom(event.scrollingDeltaY, screenLongEdge: screenLongEdge())
+                    }
                 } else if model.comparePrefersPan {
                     model.comparePanBy(dx: event.scrollingDeltaX, dy: event.scrollingDeltaY)
                 }
@@ -1879,7 +1882,9 @@ private struct EventMonitor: NSViewRepresentable {
             }
             guard model.mode == .viewer else { return event }
             if event.modifierFlags.contains(.command) {
-                model.applyScrollZoom(event.scrollingDeltaY, screenLongEdge: screenLongEdge())
+                if event.momentumPhase.isEmpty {
+                    model.applyScrollZoom(event.scrollingDeltaY, screenLongEdge: screenLongEdge())
+                }
                 return nil
             }
             if model.prefersPan {
