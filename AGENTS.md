@@ -64,11 +64,11 @@ Scripts/package-app.sh [目标目录]
 
 从现有代码归纳，请保持一致：
 
-- 注释与文档一律用简体中文（README、`macos-ui-改造指引.md`、代码内注释均如此），用户可见字符串也是中文。
+- 注释与文档一律用简体中文（README、代码内注释等均如此），用户可见字符串也是中文。
 - Core 层类型尽量声明为 `Sendable` / 纯值类型；决策类逻辑写成无状态的纯函数（如 `KeyRouting.decide`、`DropRouting.decide`、`PreviewDecodeWriteDecision.decide`），便于单测。
 - 协议 + 注入是默认的可测性模式：新增依赖时先定义协议，真实实现之外提供一个测试替身（参考 `FolderWatching` / `IdleFolderWatch`）。
 - 并发：`BrowserModel` 等 UI 相关状态用 `@MainActor`；后台解码用 Swift concurrency，跨线程回写用 generation/epoch 校验丢弃过期结果（勿引入数据竞争）。
-- UI 视觉常量集中进 `Theme.swift`，遵循 `macos-ui-改造指引.md` 的验收标准（无硬编码颜色、Light/Dark 正常等）。
+- UI 视觉常量集中进 `Theme.swift`，遵循统一验收标准（无硬编码颜色、Light/Dark 正常等）。
 - 不引入第三方依赖（当前 Package.swift 零依赖，保持如此）。
 
 ## 测试说明
@@ -100,4 +100,3 @@ swift test
 ## 其他参考
 
 - `README.md` —— 用户视角的功能说明、支持的格式列表、快捷键清单。
-- `macos-ui-改造指引.md` —— UI 改造任务的工作指引与验收标准（改视觉层前先读）。
