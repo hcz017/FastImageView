@@ -184,3 +184,7 @@ Package.swift
 ## 参与开发
 
 欢迎提交 Issue 和 Pull Request。修改前建议先运行 `swift test` 确认基线；新增 Core 层逻辑请补充对应单元测试。UI 视觉常量统一放在 `Theme.swift`。
+
+## 许可证
+
+本项目采用 GNU General Public License v3.0（GPL-3.0）发布，Copyright (c) 2026 hcz017。完整条款见 [LICENSE](LICENSE)。
