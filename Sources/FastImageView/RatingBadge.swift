@@ -33,20 +33,28 @@ struct RatingBadgeShape: Shape {
         case 2:
             var path = Path()
             let inner = outer * 0.42
-            path.addEllipse(in: circleRect(center: center, radius: inner))
-            let baseAngle = CGFloat(35 * Double.pi / 180)
-            for direction: CGFloat in [1, -1] {
-                path.move(to: CGPoint(x: center.x + direction * outer, y: center.y))
-                path.addLine(to: CGPoint(
-                    x: center.x + direction * inner * cos(baseAngle),
-                    y: center.y + inner * sin(baseAngle)
-                ))
-                path.addLine(to: CGPoint(
-                    x: center.x + direction * inner * cos(baseAngle),
-                    y: center.y - inner * sin(baseAngle)
-                ))
-                path.closeSubpath()
+            // 尖角两侧从尖端引向圆的切线，与圆顺滑相接，避免直线与圆弧
+            // 交接处的断层。圆弧用折线逼近，不依赖 addArc 的绕向语义。
+            let tangent = acos(inner / outer)
+            let rightTip = CGPoint(x: center.x + outer, y: center.y)
+            let leftTip = CGPoint(x: center.x - outer, y: center.y)
+            func circlePoint(_ angle: CGFloat) -> CGPoint {
+                CGPoint(x: center.x + inner * cos(angle), y: center.y + inner * sin(angle))
             }
+            func appendArc(from start: CGFloat, to end: CGFloat) {
+                let segments = 24
+                for index in 1...segments {
+                    let angle = start + (end - start) * CGFloat(index) / CGFloat(segments)
+                    path.addLine(to: circlePoint(angle))
+                }
+            }
+            path.move(to: rightTip)
+            path.addLine(to: circlePoint(tangent))
+            appendArc(from: tangent, to: .pi - tangent)
+            path.addLine(to: leftTip)
+            path.addLine(to: circlePoint(.pi + tangent))
+            appendArc(from: .pi + tangent, to: 2 * .pi - tangent)
+            path.closeSubpath()
             return path
         default:
             var path = Path()
