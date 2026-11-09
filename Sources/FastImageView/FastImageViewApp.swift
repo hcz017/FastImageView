@@ -94,6 +94,9 @@ struct FastImageViewApp: App {
                 }
                 .disabled(model.mode != .viewer && model.mode != .compare)
             }
+            CommandGroup(replacing: .appInfo) {
+                Button("关于 FastImageView") { showAbout() }
+            }
             CommandGroup(replacing: .help) {
                 Button("键盘快捷键…") { showShortcutsHelp() }
             }
@@ -203,6 +206,66 @@ func showShortcutsHelp() {
     alert.accessoryView = grid
     alert.addButton(withTitle: "好")
     alert.runModal()
+}
+
+@MainActor
+func showAbout() {
+    let downloadURL = URL(string: "https://github.com/hcz017/FastImageView/releases")!
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版"
+
+    let alert = NSAlert()
+    alert.messageText = "FastImageView"
+    alert.icon = NSApplication.shared.applicationIconImage
+    alert.informativeText = """
+    一款专注快速打开与切换的 macOS 看图工具。
+
+    • 缩略图网格浏览，双击或空格秒开大图，方向键连续切图
+    • 支持 JPG、PNG、HEIC、GIF、TIFF、WebP 及主流相机原片（读取内嵌预览）
+    • 1–5 设置分级，⇧1–⇧5 按分级筛选，⌘F 按文件名搜索
+    • 选中 2–3 张图片按 P 进入同步对比
+    • Delete / ⌘⌫ 移到废纸篓，⌘Z 撤销
+    • 大图按 I 查看拍摄信息，⌘滚轮或捏合连续缩放
+
+    版本 \(version)
+    """
+
+    // 弹窗中的下载链接：用无边框按钮呈现，点击后打开浏览器。
+    let linkTarget = URLButtonTarget(url: downloadURL)
+    let linkButton = NSButton(title: "打开发布下载页面", target: linkTarget, action: #selector(URLButtonTarget.openURL))
+    linkButton.bezelStyle = .inline
+    linkButton.isBordered = false
+    linkButton.attributedTitle = NSAttributedString(
+        string: downloadURL.absoluteString,
+        attributes: [
+            .foregroundColor: NSColor.linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+        ]
+    )
+
+    let linkRow = NSStackView(views: [linkButton])
+    linkRow.orientation = .vertical
+    linkRow.alignment = .leading
+    // NSAlert 没有直接设置宽度的属性，宽度由正文与附件视图共同撑开；
+    // 给附件视图一个固定宽度，即可把整个弹窗放宽，正文也随之少换行。
+    linkRow.setFrameSize(NSSize(width: 460, height: linkRow.fittingSize.height))
+    alert.accessoryView = linkRow
+
+    alert.addButton(withTitle: "好")
+    alert.runModal()
+}
+
+/// 为弹窗里的链接按钮提供 target/action（NSButton 的 target 不会强引用）。
+private final class URLButtonTarget: NSObject {
+    private let url: URL
+
+    init(url: URL) {
+        self.url = url
+    }
+
+    @objc func openURL() {
+        NSWorkspace.shared.open(url)
+    }
 }
 
 @MainActor
