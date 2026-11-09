@@ -145,28 +145,62 @@ extension Notification.Name {
 
 @MainActor
 func showShortcutsHelp() {
+    let shortcuts: [(keys: String, action: String)] = [
+        ("⌘O", "打开文件夹"),
+        ("← →", "上一张 / 下一张"),
+        ("↑ ↓", "在网格中按行移动"),
+        ("⌘F", "搜索文件名"),
+        ("空格", "打开 / 关闭大图"),
+        ("1–5", "设置分级"),
+        ("⇧1–⇧5", "切换分级筛选（仅网格）"),
+        ("P", "对比选中的 2–3 张图片"),
+        ("I", "显示 / 隐藏图片信息"),
+        ("⌘+ / ⌘−", "放大 / 缩小"),
+        ("⌘滚轮 / 捏合", "连续缩放"),
+        ("拖拽", "放大后平移"),
+        ("⌘点击 / ⇧点击", "多选"),
+        ("Return", "打开大图"),
+        ("Delete / ⌘⌫", "移到废纸篓"),
+        ("⌘C", "拷贝图片"),
+        ("⌘Z", "撤销移到废纸篓"),
+        ("Esc", "回到网格"),
+    ]
+
+    let keyFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    // 按键列宽度取内容最宽者，保证两列对齐。
+    let keyColumnWidth = shortcuts.reduce(CGFloat(0)) { width, shortcut in
+        let size = (shortcut.keys as NSString).size(withAttributes: [.font: keyFont])
+        return max(width, ceil(size.width))
+    } + 8
+
+    let rows = shortcuts.map { shortcut -> NSStackView in
+        let keyLabel = NSTextField(labelWithString: shortcut.keys)
+        keyLabel.font = keyFont
+        keyLabel.textColor = .labelColor
+        keyLabel.alignment = .right
+        keyLabel.widthAnchor.constraint(equalToConstant: keyColumnWidth).isActive = true
+
+        let actionLabel = NSTextField(labelWithString: shortcut.action)
+        actionLabel.font = .systemFont(ofSize: 12)
+        actionLabel.textColor = .secondaryLabelColor
+
+        let row = NSStackView(views: [keyLabel, actionLabel])
+        row.orientation = .horizontal
+        row.alignment = .firstBaseline
+        row.spacing = 12
+        return row
+    }
+
+    let grid = NSStackView(views: rows)
+    grid.orientation = .vertical
+    grid.alignment = .leading
+    grid.spacing = 6
+    grid.edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+    grid.setFrameSize(grid.fittingSize)
+
     let alert = NSAlert()
     alert.messageText = "键盘快捷键"
-    alert.informativeText = """
-    ⌘O  打开文件夹
-    ← →  上一张 / 下一张
-    ↑ ↓  在网格中按行移动
-    ⌘F  搜索文件名
-    空格  打开 / 关闭大图
-    1–5  设置分级
-    ⇧1–⇧5  切换分级筛选（仅网格）
-    P  对比选中的 2–3 张图片
-    I  显示 / 隐藏图片信息
-    ⌘+ / ⌘−  放大 / 缩小
-    ⌘滚轮 / 捏合  连续缩放
-    拖拽  放大后平移
-    ⌘点击 / ⇧点击  多选
-    Return  打开大图
-    Delete / ⌘⌫  移到废纸篓
-    ⌘C  拷贝图片
-    ⌘Z  撤销移到废纸篓
-    Esc  回到网格
-    """
+    alert.accessoryView = grid
     alert.addButton(withTitle: "好")
     alert.runModal()
 }
