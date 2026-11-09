@@ -102,6 +102,23 @@
 
 - macOS 14 或更高版本
 - Swift 5.9（随 Xcode 15 或更新的命令行工具提供）
+- 预编译包只提供 Apple Silicon（arm64）版本，Intel Mac 需要从源码构建
+
+## 下载安装
+
+从 [Releases](https://github.com/hcz017/FastImageView/releases) 下载最新的 `FastImageView-<版本>-macos.zip`，解压后把 `FastImageView.app` 拖进「应用程序」。
+
+预编译包使用 ad-hoc 签名，没有经过 Apple 公证，首次启动会被 Gatekeeper 拦截。任选一种方式放行：
+
+- **macOS 14**：在访达中右键点击应用选「打开」，再在弹窗里确认一次。
+- **macOS 15 及以上**：右键「打开」已不再生效，改到「系统设置 → 隐私与安全性」，在页面下方点「仍要打开」。
+- **终端一次性清除隔离属性**：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/FastImageView.app
+```
+
+放行一次后即可正常启动；每次下载新版本都会重新带上隔离属性，需要再放行一次。
 
 ## 从源码运行
 
