@@ -74,7 +74,7 @@ struct AppTheme {
             return Color(red: 0.18, green: 0.58, blue: 0.72).opacity(0.92)
         case .bmp:
             return Color(red: 0.35, green: 0.40, blue: 0.52).opacity(0.92)
-        case .nef, .cr2, .cr3, .arw, .raf, .orf, .rw2, .dng, .pef:
+        case .nef, .nrw, .cr2, .cr3, .arw, .sr2, .srf, .raf, .orf, .rw2, .dng, .pef:
             return Color.orange.opacity(0.95)
         }
     }

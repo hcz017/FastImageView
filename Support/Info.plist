@@ -44,9 +44,12 @@
 				<string>public.camera-raw-image</string>
 				<string>com.adobe.raw-image</string>
 				<string>com.nikon.raw-image</string>
+				<string>com.nikon.nrw-raw-image</string>
 				<string>com.canon.cr2-raw-image</string>
 				<string>com.canon.cr3-raw-image</string>
 				<string>com.sony.arw-raw-image</string>
+				<string>com.sony.sr2-raw-image</string>
+				<string>com.sony.raw-image</string>
 				<string>com.fuji.raw-image</string>
 				<string>com.olympus.raw-image</string>
 				<string>com.panasonic.raw-image</string>
