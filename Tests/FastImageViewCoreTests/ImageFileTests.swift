@@ -9,6 +9,9 @@ final class ImageFileTests: XCTestCase {
         XCTAssertEqual(ImageFormat.from(filename: "a.tif"), .tiff)
         XCTAssertEqual(ImageFormat.from(filename: "shot.NEF"), .nef)
         XCTAssertEqual(ImageFormat.from(filename: "a.CR3"), .cr3)
+        XCTAssertEqual(ImageFormat.from(filename: "a.NRW"), .nrw)
+        XCTAssertEqual(ImageFormat.from(filename: "a.sr2"), .sr2)
+        XCTAssertEqual(ImageFormat.from(filename: "a.SRF"), .srf)
         XCTAssertNil(ImageFormat.from(filename: "notes.txt"))
         XCTAssertNil(ImageFormat.from(filename: "archive"))
     }
@@ -19,6 +22,9 @@ final class ImageFileTests: XCTestCase {
         XCTAssertEqual(ImageFormat.heic.badge, "HEIC")
         XCTAssertEqual(ImageFormat.nef.badge, "NEF")
         XCTAssertTrue(ImageFormat.cr3.isRaw)
+        XCTAssertTrue(ImageFormat.nrw.isRaw)
+        XCTAssertTrue(ImageFormat.sr2.isRaw)
+        XCTAssertTrue(ImageFormat.srf.isRaw)
         XCTAssertFalse(ImageFormat.png.isRaw)
     }
 

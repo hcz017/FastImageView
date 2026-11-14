@@ -8,7 +8,7 @@ FastImageView 是一个 macOS 看图应用（纯 SwiftPM 工程，无 Xcode 工�
 
 关键产品约束（改动时勿破坏）：
 
-- 相机原片（NEF/CR2/CR3/ARW/RAF/ORF/RW2/DNG/PEF）只读内嵌 JPEG 预览，不做传感器全尺寸解码。
+- 相机原片（NEF/NRW/CR2/CR3/ARW/SR2/SRF/RAF/ORF/RW2/DNG/PEF）只读内嵌 JPEG 预览，不做传感器全尺寸解码。
 - 不递归子文件夹。
 - 不启用 App Sandbox。
 - 要求 macOS 14+，Swift 5.9（swift-tools-version: 5.9）。

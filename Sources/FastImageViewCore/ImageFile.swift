@@ -2,11 +2,11 @@ import Foundation
 
 public enum ImageFormat: String, CaseIterable, Equatable, Sendable {
     case jpeg, png, heic, gif, tiff, webp, bmp
-    case nef, cr2, cr3, arw, raf, orf, rw2, dng, pef
+    case nef, nrw, cr2, cr3, arw, sr2, srf, raf, orf, rw2, dng, pef
 
     public var isRaw: Bool {
         switch self {
-        case .nef, .cr2, .cr3, .arw, .raf, .orf, .rw2, .dng, .pef:
+        case .nef, .nrw, .cr2, .cr3, .arw, .sr2, .srf, .raf, .orf, .rw2, .dng, .pef:
             return true
         case .jpeg, .png, .heic, .gif, .tiff, .webp, .bmp:
             return false
@@ -23,9 +23,12 @@ public enum ImageFormat: String, CaseIterable, Equatable, Sendable {
         case .webp: "WEBP"
         case .bmp: "BMP"
         case .nef: "NEF"
+        case .nrw: "NRW"
         case .cr2: "CR2"
         case .cr3: "CR3"
         case .arw: "ARW"
+        case .sr2: "SR2"
+        case .srf: "SRF"
         case .raf: "RAF"
         case .orf: "ORF"
         case .rw2: "RW2"
@@ -37,8 +40,9 @@ public enum ImageFormat: String, CaseIterable, Equatable, Sendable {
     private static let byExtension: [String: ImageFormat] = [
         "jpg": .jpeg, "jpeg": .jpeg, "png": .png, "heic": .heic, "heif": .heic,
         "gif": .gif, "tif": .tiff, "tiff": .tiff, "webp": .webp, "bmp": .bmp,
-        "nef": .nef, "cr2": .cr2, "cr3": .cr3, "arw": .arw, "raf": .raf,
-        "orf": .orf, "rw2": .rw2, "dng": .dng, "pef": .pef
+        "nef": .nef, "nrw": .nrw, "cr2": .cr2, "cr3": .cr3, "arw": .arw,
+        "sr2": .sr2, "srf": .srf, "raf": .raf, "orf": .orf, "rw2": .rw2,
+        "dng": .dng, "pef": .pef
     ]
 
     public static func from(filename: String) -> ImageFormat? {
